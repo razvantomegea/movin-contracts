@@ -1,13 +1,12 @@
 import { ethers } from "hardhat";
+import { MOVIN_EARN_PROXY_ADDRESS } from "./contract-addresses";
 
-// Contract address on local node
-const MOVIN_EARN_V2_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
 
 async function main() {
   console.log("Fetching users from MOVINEarnV2 contract on local node...");
   
   // Get contract
-  const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", MOVIN_EARN_V2_ADDRESS);
+  const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", MOVIN_EARN_PROXY_ADDRESS);
   
   // Use smaller block ranges for local node which has fewer blocks
   const blockRanges = [

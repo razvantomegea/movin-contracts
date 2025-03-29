@@ -1,18 +1,11 @@
 import { ethers, upgrades } from "hardhat";
 import { Log } from "@ethersproject/abstract-provider";
-
-// Constants for testing on local network
-const MOVIN_EARN_PROXY_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
-
-// Base chain
-// const MOVIN_EARN_PROXY_ADDRESS = "0x865E693ebd875eD997BeEc565CFfBbE687Ee5776";
-
-const MOVIN_TOKEN_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+import { MOVIN_EARN_PROXY_ADDRESS, USER_ADDRESS } from "./contract-addresses";
 
 // List of known user addresses to migrate (useful for local testing)
 // This will be populated by scanning events, but can be hardcoded for local testing
 const KNOWN_USER_ADDRESSES: string[] = [
-  "0x70997970c51812dc3a010c7d01b50e0d17dc79c8", // Example user address
+    USER_ADDRESS, // Example user address
 ];
 
 async function main() {

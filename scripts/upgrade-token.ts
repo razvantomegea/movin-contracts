@@ -1,7 +1,5 @@
 import { ethers, upgrades } from "hardhat";
-
-// MovinToken proxy address from deployment
-const MOVIN_TOKEN_PROXY_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+import { MOVIN_TOKEN_PROXY_ADDRESS } from "./contract-addresses";
 
 async function main() {
   console.log("Upgrading MovinToken contract to V2...");

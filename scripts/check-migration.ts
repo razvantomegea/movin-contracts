@@ -1,24 +1,13 @@
 import { ethers } from "hardhat";
 import { FunctionFragment } from "ethers";
-
-// Contract address 
-// const MOVIN_EARN_V2_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
-
-// Base chain
-const MOVIN_EARN_V2_ADDRESS = "0xE7c866715F5b19Bd0B6aFCE2bABED848fCf2D865";
-
-// User to check
-// const USER_ADDRESS = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
-
-// Base chain
-const USER_ADDRESS = "0xa0cC42918a127e86a45795c60409d25fe382B252";
+import { MOVIN_EARN_PROXY_ADDRESS, USER_ADDRESS } from "./contract-addresses";
 
 
 async function main() {
   console.log(`Checking migration status for user ${USER_ADDRESS}...`);
   
   // Get contract
-  const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", MOVIN_EARN_V2_ADDRESS);
+  const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", MOVIN_EARN_PROXY_ADDRESS);
   
   try {
     // Check if we can access the user

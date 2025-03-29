@@ -83,11 +83,11 @@ async function main() {
 
   // Test V2 specific functionality - Referrals
   console.log("\n--- 🤝 TESTING REFERRAL FUNCTIONALITY ---");
-  await testReferrals(movinEarnV2, user1, user2);
+  await testReferrals(movinEarnV2, user1, user2, movinToken, owner);
 
   // Test V2 specific functionality - Activities and Rewards
   console.log("\n--- 👟 TESTING ACTIVITY AND REWARDS FUNCTIONALITY ---");
-  await testActivitiesAndRewards(movinEarnV2, movinToken, user1, user2, user3);
+  await testActivitiesAndRewards(movinEarnV2, movinToken, user1, user2, user3, owner);
 
   // Test claim all staking rewards
   console.log("\n--- 🎯 TESTING CLAIM ALL STAKING REWARDS ---");
@@ -340,7 +340,7 @@ async function testDataMigration(movinEarnV2: any, users: any[], owner: any) {
   }
 }
 
-async function testReferrals(movinEarnV2: any, referrer: any, referee: any) {
+async function testReferrals(movinEarnV2: any, referrer: any, referee: any, movinToken: any, owner: any) {
   try {
     // Check if referral already exists
     const referralInfo = await movinEarnV2.getReferralInfo(referee.address);
@@ -364,31 +364,104 @@ async function testReferrals(movinEarnV2: any, referrer: any, referee: any) {
     }
     
     // Get referrer's referral count
-    const [_, referralCount] = await movinEarnV2.getReferralInfo(referrer.address);
-    console.log(`✅ Referrer has ${referralCount} referred users`);
+    const [_, earnedBonus, referralCount] = await movinEarnV2.getReferralInfo(referrer.address);
+    console.log(`✅ Referrer has ${referralCount} referred users and has earned ${ethers.formatEther(earnedBonus)} MOVIN in referral bonuses`);
     
-    // Record activity for referee to test referral bonus
-    console.log("\nTesting referral bonus with activity recording...");
+    // Set referee as premium to get rewards
+    try {
+      await movinEarnV2.connect(owner).setPremiumStatus(referee.address, true);
+      console.log("✅ Set referee as premium user");
+    } catch (error) {
+      console.error(`❌ Failed to set premium status: ${error instanceof Error ? error.message : String(error)}`);
+    }
     
-    // Get initial activity data
-    const [referrerStepsBefore] = await movinEarnV2.connect(referrer).getUserActivity();
+    console.log("\nTesting referral rewards bonus...");
     
-    // Record activity for referee
-    const stepsToRecord = 10000;
-    const metsToRecord = 15;
+    // Record activity for referee that will generate rewards
+    const stepsToRecord = 10000; // STEPS_THRESHOLD
+    const metsToRecord = 10;    // METS_THRESHOLD
     await movinEarnV2.connect(referee).recordActivity(stepsToRecord, metsToRecord);
-    console.log(`✅ Recorded ${stepsToRecord} steps and ${metsToRecord} METs for referee`);
+    console.log(`✅ Recorded ${stepsToRecord} steps and ${metsToRecord} METs for referee (should generate rewards)`);
     
-    // Check if referrer received the referral bonus
-    const [referrerStepsAfter] = await movinEarnV2.connect(referrer).getUserActivity();
-    const expectedBonus = Math.floor(stepsToRecord * 0.01); // 1% bonus
+    // Check if rewards were generated
+    const [pendingStepsReward, pendingMetsReward] = await movinEarnV2.connect(referee).getPendingRewards();
+    const totalPendingRewards = pendingStepsReward + pendingMetsReward;
     
-    console.log(`Referrer steps before: ${referrerStepsBefore}, after: ${referrerStepsAfter}`);
-    
-    if (Number(referrerStepsAfter) >= Number(referrerStepsBefore) + expectedBonus) {
-      console.log(`✅ Referrer received ~${referrerStepsAfter - referrerStepsBefore} steps as referral bonus (expected ~${expectedBonus})`);
+    if (totalPendingRewards > 0) {
+      console.log(`✅ Referee has ${ethers.formatEther(totalPendingRewards)} MOVIN in pending rewards`);
+      
+      // Get balances before claiming
+      const referrerBalanceBefore = await movinToken.balanceOf(referrer.address);
+      const refereeBalanceBefore = await movinToken.balanceOf(referee.address);
+      
+      console.log(`Referrer balance before: ${ethers.formatEther(referrerBalanceBefore)} MOVIN`);
+      console.log(`Referee balance before: ${ethers.formatEther(refereeBalanceBefore)} MOVIN`);
+      
+      // Calculate expected amounts
+      const burnAmount = (totalPendingRewards * BigInt(1)) / BigInt(100); // 1% burn fee
+      const afterBurnReward = totalPendingRewards - burnAmount;
+      const referralBonus = (afterBurnReward * BigInt(1)) / BigInt(100); // 1% referral bonus
+      const expectedRefereeReward = afterBurnReward - referralBonus;
+      
+      // Claim rewards
+      console.log("Claiming rewards...");
+      try {
+        await movinEarnV2.connect(referee).claimRewards();
+        console.log("✅ Rewards claimed successfully");
+        
+        // Get balances after claiming
+        const referrerBalanceAfter = await movinToken.balanceOf(referrer.address);
+        const refereeBalanceAfter = await movinToken.balanceOf(referee.address);
+        
+        console.log(`Referrer balance after: ${ethers.formatEther(referrerBalanceAfter)} MOVIN`);
+        console.log(`Referee balance after: ${ethers.formatEther(refereeBalanceAfter)} MOVIN`);
+        
+        // Calculate actual received amounts
+        const referrerReceived = referrerBalanceAfter - referrerBalanceBefore;
+        const refereeReceived = refereeBalanceAfter - refereeBalanceBefore;
+        
+        console.log(`Referrer received: ${ethers.formatEther(referrerReceived)} MOVIN`);
+        console.log(`Referee received: ${ethers.formatEther(refereeReceived)} MOVIN`);
+        
+        // Verify amounts
+        if (referrerReceived > 0) {
+          console.log(`✅ Referrer received ${ethers.formatEther(referrerReceived)} MOVIN as referral bonus`);
+          
+          // Check if it's close to the expected 1%
+          const referrerReceivedNum = Number(referrerReceived);
+          const afterBurnRewardNum = Number(afterBurnReward);
+          const actualPercentage = (referrerReceivedNum * 100) / afterBurnRewardNum;
+          console.log(`Actual referral bonus percentage: ~${actualPercentage.toFixed(2)}% (should be close to 1%)`);
+          
+          if (Math.abs(actualPercentage - 1.0) < 0.1) {
+            console.log("✅ Referral bonus percentage is correct");
+          } else {
+            console.log("❌ Referral bonus percentage is incorrect");
+          }
+        } else {
+          console.log("❌ Referrer did not receive any bonus");
+        }
+        
+        // Check if referee got the expected amount (minus referral bonus)
+        if (Math.abs(Number(refereeReceived) - Number(expectedRefereeReward)) < Number(1e14)) { // Small rounding tolerance
+          console.log("✅ Referee received the correct amount (after burn fee and referral bonus)");
+        } else {
+          console.log(`❌ Referee received an unexpected amount. Expected: ${ethers.formatEther(expectedRefereeReward)}, Actual: ${ethers.formatEther(refereeReceived)}`);
+        }
+        
+        // Check if earnedBonus was updated in the contract
+        const [_, updatedEarnedBonus, __] = await movinEarnV2.getReferralInfo(referrer.address);
+        if (updatedEarnedBonus > earnedBonus) {
+          console.log(`✅ Referrer's earnedBonus was updated in the contract: ${ethers.formatEther(updatedEarnedBonus)}`);
+        } else {
+          console.log("❌ Referrer's earnedBonus was not updated in the contract");
+        }
+        
+      } catch (error) {
+        console.log(`❌ Error claiming rewards: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } else {
-      console.log(`❌ Referrer did not receive expected referral bonus. Steps before: ${referrerStepsBefore}, after: ${referrerStepsAfter}, expected bonus: ~${expectedBonus}`);
+      console.log("❌ No pending rewards generated. Cannot test referral bonus.");
     }
     
     console.log("\n✅ Referral functionality testing completed");
@@ -402,40 +475,261 @@ async function testActivitiesAndRewards(
   movinToken: any, 
   user1: any, 
   user2: any,
-  user3: any
+  user3: any,
+  owner: any
 ) {
   try {
     console.log("\nRecording activities and testing rewards...");
     
-    // Record activities for different users
+    // First test hourly limits
+    console.log("\nTesting hourly activity limits...");
+    
+    // Get hourly limits from the contract
+    const MAX_HOURLY_STEPS = await movinEarnV2.MAX_HOURLY_STEPS();
+    const MAX_HOURLY_METS = await movinEarnV2.MAX_HOURLY_METS();
+    console.log(`Maximum hourly limits: ${MAX_HOURLY_STEPS} steps, ${MAX_HOURLY_METS} METs`);
+
+    // Reset time to ensure we're starting with a clean state
+    await time.increase(3600 + 60); // Advance more than 1 hour to reset hourly counters
+    
+    // Record activity within hourly limits - use 50% of the limit
+    const steps1 = Number(MAX_HOURLY_STEPS) / 2;
+    const mets1 = Number(MAX_HOURLY_METS) / 2;
+    await movinEarnV2.connect(user1).recordActivity(steps1, mets1);
+    console.log(`✅ User recorded ${steps1} steps and ${mets1} METs (50% of hourly limits)`);
+    
+    // Record more activity but still within limits - use 40% more (90% total)
+    const steps2 = Number(MAX_HOURLY_STEPS) * 0.4;
+    const mets2 = Number(MAX_HOURLY_METS) * 0.4;
+    await movinEarnV2.connect(user1).recordActivity(steps2, mets2);
+    console.log(`✅ User recorded additional ${steps2} steps and ${mets2} METs (now at 90% of hourly limits)`);
+    
+    // Try to exceed hourly limits by adding 15% more (would be 105% total)
+    try {
+      const exceededSteps = Number(MAX_HOURLY_STEPS) * 0.15;
+      const exceededMets = Number(MAX_HOURLY_METS) * 0.15;
+      await movinEarnV2.connect(user1).recordActivity(exceededSteps, exceededMets);
+      console.log("❌ User was able to exceed hourly limits - this should not happen!");
+    } catch (error) {
+      console.log("✅ User was correctly prevented from exceeding hourly limits");
+    }
+    
+    // Advance time to next hour
+    await time.increase(3600 + 60); // 1 hour + 1 minute
+    console.log("⏱ Advanced time by 1 hour");
+    
+    // Now we should be able to record activity again - use 80% of the limit
+    const steps3 = Number(MAX_HOURLY_STEPS) * 0.8;
+    const mets3 = Number(MAX_HOURLY_METS) * 0.8;
+    await movinEarnV2.connect(user1).recordActivity(steps3, mets3);
+    console.log(`✅ After 1 hour, user was able to record ${steps3} steps and ${mets3} METs (80% of hourly limits)`);
+    
+    // Test daily limits
+    console.log("\nTesting daily activity limits...");
+    
+    // Create a new user to test daily limits from scratch
+    const testUser = user3;
+    
+    // Set test user as premium
+    await movinEarnV2.connect(owner).setPremiumStatus(testUser.address, true);
+    console.log("✅ Set test user as premium");
+    
+    // Check MAX_DAILY limits
+    const MAX_DAILY_STEPS = await movinEarnV2.MAX_DAILY_STEPS();
+    const MAX_DAILY_METS = await movinEarnV2.MAX_DAILY_METS();
+    console.log(`Maximum daily limits: ${MAX_DAILY_STEPS} steps, ${MAX_DAILY_METS} METs`);
+    
+    // Reset time to ensure we're starting with a clean state for the new user
+    await time.increase(24 * 60 * 60 + 60); // Advance more than a day to reset daily counters
+    
+    // Try to record activity exceeding the maximum daily limits directly
+    try {
+      await movinEarnV2.connect(testUser).recordActivity(Number(MAX_DAILY_STEPS) + 1, 5);
+      console.log("❌ User was able to exceed max daily steps limit directly - this should not happen!");
+    } catch (error) {
+      console.log("✅ User was correctly prevented from exceeding max daily steps limit directly");
+    }
+    
+    try {
+      await movinEarnV2.connect(testUser).recordActivity(5000, Number(MAX_DAILY_METS) + 1);
+      console.log("❌ User was able to exceed max daily METs limit directly - this should not happen!");
+    } catch (error) {
+      console.log("✅ User was correctly prevented from exceeding max daily METs limit directly");
+    }
+    
+    // Test approaching the daily limits through multiple recordings
+    console.log("\nTesting daily limits through accumulation:");
+    
+    // Record activity in multiple calls - in hourly chunks
+    // First hour - use 30% of daily limit but ensure we don't exceed hourly limit
+    const dailyBatch1Steps = Math.min(Number(MAX_DAILY_STEPS) * 0.3, Number(MAX_HOURLY_STEPS));
+    const dailyBatch1Mets = Math.min(Number(MAX_DAILY_METS) * 0.3, Number(MAX_HOURLY_METS));
+    await movinEarnV2.connect(testUser).recordActivity(dailyBatch1Steps, dailyBatch1Mets);
+    console.log(`✅ User recorded ${dailyBatch1Steps} steps and ${dailyBatch1Mets} METs (first hour - 30% of daily limit)`);
+    
+    // Get recorded activity
+    let [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+    console.log(`Current activity counts: ${recordedSteps} steps and ${recordedMets} METs`);
+    
+    // Advance time by an hour to reset hourly limits
+    await time.increase(3600 + 60);
+    console.log("⏱ Advanced time by 1 hour");
+    
+    // Second hour - use another 30% of daily limit but ensure we don't exceed hourly limit
+    const dailyBatch2Steps = Math.min(Number(MAX_DAILY_STEPS) * 0.3, Number(MAX_HOURLY_STEPS));
+    const dailyBatch2Mets = Math.min(Number(MAX_DAILY_METS) * 0.3, Number(MAX_HOURLY_METS)); 
+    await movinEarnV2.connect(testUser).recordActivity(dailyBatch2Steps, dailyBatch2Mets);
+    console.log(`✅ User recorded ${dailyBatch2Steps} steps and ${dailyBatch2Mets} METs (second hour - 30% more of daily limit)`);
+    
+    // Get accumulated activity
+    [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+    console.log(`Current activity counts: ${recordedSteps} steps and ${recordedMets} METs`);
+    
+    // Advance time by another hour
+    await time.increase(3600 + 60);
+    console.log("⏱ Advanced time by 1 hour");
+    
+    // Third hour - use another 30% of daily limit but ensure we don't exceed hourly limit
+    const dailyBatch3Steps = Math.min(Number(MAX_DAILY_STEPS) * 0.3, Number(MAX_HOURLY_STEPS));
+    const dailyBatch3Mets = Math.min(Number(MAX_DAILY_METS) * 0.3, Number(MAX_HOURLY_METS));
+    
+    try {
+      await movinEarnV2.connect(testUser).recordActivity(dailyBatch3Steps, dailyBatch3Mets);
+      console.log(`✅ User recorded ${dailyBatch3Steps} steps and ${dailyBatch3Mets} METs (third hour - 30% more of daily limit)`);
+      
+      // Get updated activity counts
+      [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+      console.log(`Current activity counts after third recording: ${recordedSteps} steps and ${recordedMets} METs`);
+      
+      // Since we're now at 90% of daily limit, try to add 15% more (which would exceed daily limit)
+      await time.increase(3600 + 60); // Advance another hour
+      try {
+        const exceededDailySteps = Number(MAX_DAILY_STEPS) * 0.15;
+        const exceededDailyMets = Number(MAX_DAILY_METS) * 0.15;
+        await movinEarnV2.connect(testUser).recordActivity(exceededDailySteps, exceededDailyMets);
+        
+        // If we get here, check if we've actually exceeded limit or if the contract enforces it
+        [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+        if (recordedSteps > Number(MAX_DAILY_STEPS) || recordedMets > Number(MAX_DAILY_METS)) {
+          console.log(`❌ User was able to exceed daily limits - now at ${recordedSteps} steps and ${recordedMets} METs`);
+        } else {
+          console.log(`✅ Contract stopped accepting more than MAX_DAILY limit`);
+        }
+      } catch (error) {
+        console.log("✅ User was correctly prevented from exceeding daily limits");
+      }
+    } catch (error) {
+      console.log(`⚠️ Failed to record third batch activity: ${error instanceof Error ? error.message : String(error)}`);
+      console.log("This may happen if the accumulated steps are already approaching the daily limit");
+    }
+    
+    // Check if we're approaching maximum daily limits
+    [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+    if (recordedSteps >= Number(MAX_DAILY_STEPS) * 0.9) {
+      console.log(`⚠️ Steps count (${recordedSteps}) has reached or exceeded 90% of the maximum daily limit (${MAX_DAILY_STEPS})`);
+    } else {
+      console.log(`Steps count (${recordedSteps}) is still below 90% of the maximum daily limit (${MAX_DAILY_STEPS})`);
+    }
+    
+    // Advance time to next day to test daily reset
+    await time.increase(24 * 60 * 60 + 60);
+    console.log("⏱ Advanced time by 1 day");
+    
+    // Record activity in the new day to verify daily reset
+    await movinEarnV2.connect(testUser).recordActivity(5000, 5);
+    console.log("✅ User recorded 5000 steps and 5 METs in the new day");
+    
+    // Get activity counts for the new day - these should only include the 5000 steps and 5 METs
+    [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+    console.log(`Activity counts in new day: ${recordedSteps} steps and ${recordedMets} METs`);
+    
+    // Verify daily reset worked correctly - should be exactly the new values
+    if (recordedSteps === 5000n && recordedMets === 5n) {
+      console.log("✅ Daily activity counters reset correctly for the new day");
+    } else {
+      console.log(`❌ Daily activity counters did NOT reset correctly for the new day. Expected 5000 steps and 5 METs, got ${recordedSteps} steps and ${recordedMets} METs`);
+      
+      // Try recording more activity to see if the limits work correctly
+      try {
+        // Advance another hour
+        await time.increase(3600 + 60);
+        await movinEarnV2.connect(testUser).recordActivity(1000, 1);
+        console.log("✅ Successfully recorded additional activity in the same day");
+        
+        // Get updated values
+        [recordedSteps, recordedMets] = await movinEarnV2.connect(testUser).getUserActivity();
+        console.log(`Updated activity counts: ${recordedSteps} steps and ${recordedMets} METs`);
+      } catch (error) {
+        console.log(`❌ Error recording additional activity: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    
+    // Record activities for different users - using safe values below hourly limits
+    console.log("\nTesting activity rewards...");
+    
+    // Advance time to ensure fresh state
+    await time.increase(24 * 60 * 60 + 60);
+    
     const activities = [
-      { user: user1, steps: 15000, mets: 25 },
-      { user: user2, steps: 20000, mets: 30 },
-      { user: user3, steps: 25000, mets: 35 }
+      { user: user1, steps: 2000, mets: 2 },
+      { user: user2, steps: 4000, mets: 4 },
+      { user: user3, steps: 6000, mets: 6 }
     ];
     
     for (const activity of activities) {
+      // Set premium status to ensure METs are recorded
+      await movinEarnV2.connect(owner).setPremiumStatus(activity.user.address, true);
+      console.log(`✅ Set premium status for user ${activity.user.address}`);
+      
       // Check token balance before
       const balanceBefore = await movinToken.balanceOf(activity.user.address);
       
-      // Record activity
+      // Record activity - make sure it's above thresholds to generate rewards
       await movinEarnV2.connect(activity.user).recordActivity(activity.steps, activity.mets);
       console.log(`✅ User ${activity.user.address} recorded ${activity.steps} steps and ${activity.mets} METs`);
       
+      // Get current activity counts
+      const [recordedSteps, recordedMets] = await movinEarnV2.connect(activity.user).getUserActivity();
+      console.log(`✅ Current activity counts: ${recordedSteps} steps and ${recordedMets} METs`);
+      
+      // Get the steps threshold from the contract
+      const STEPS_THRESHOLD = await movinEarnV2.STEPS_THRESHOLD();
+      
+      // Ensure activity is above thresholds to generate rewards
+      if (recordedSteps < Number(STEPS_THRESHOLD)) {
+        // Add more steps to reach threshold
+        const additionalSteps = Number(STEPS_THRESHOLD) - Number(recordedSteps) + 100; // Add a buffer
+        await time.increase(3600 + 60); // Wait an hour to reset hourly limits
+        await movinEarnV2.connect(activity.user).recordActivity(additionalSteps, 0);
+        console.log(`✅ Added ${additionalSteps} more steps to reach threshold`);
+      }
+      
       // Get pending rewards
-      const [pendingStepsReward, pendingMetsReward] = await movinEarnV2.connect(activity.user).getPendingActivityRewards();
+      const [pendingStepsReward, pendingMetsReward] = await movinEarnV2.connect(activity.user).getPendingRewards();
       console.log(`✅ Pending rewards: ${ethers.formatEther(pendingStepsReward)} for steps, ${ethers.formatEther(pendingMetsReward)} for METs`);
       
       // Claim rewards if available
       if (pendingStepsReward > 0 || pendingMetsReward > 0) {
-        await movinEarnV2.connect(activity.user).claimActivityRewards();
-        console.log(`✅ Claimed activity rewards`);
-        
-        // Check balance after claiming
-        const balanceAfter = await movinToken.balanceOf(activity.user.address);
-        const rewardAmount = balanceAfter - balanceBefore;
-        
-        console.log(`✅ Received ${ethers.formatEther(rewardAmount)} MOVIN tokens as reward`);
+        try {
+          await movinEarnV2.connect(activity.user).claimRewards();
+          console.log(`✅ Claimed activity rewards`);
+          
+          // Check if activity counts were reset
+          const [stepsAfter, metsAfter] = await movinEarnV2.connect(activity.user).getUserActivity();
+          if (stepsAfter === 0n && metsAfter === 0n) {
+            console.log(`✅ Activity counts were reset to 0 after claiming, as expected`);
+          } else {
+            console.log(`❌ Activity counts were NOT reset after claiming: ${stepsAfter} steps, ${metsAfter} METs`);
+          }
+          
+          // Check balance after claiming
+          const balanceAfter = await movinToken.balanceOf(activity.user.address);
+          const rewardAmount = balanceAfter - balanceBefore;
+          
+          console.log(`✅ Received ${ethers.formatEther(rewardAmount)} MOVIN tokens as reward`);
+        } catch (error) {
+          console.log(`❌ Error claiming rewards: ${error instanceof Error ? error.message : String(error)}`);
+        }
       } else {
         console.log(`⚠️ No rewards available to claim`);
       }
@@ -451,14 +745,19 @@ async function testActivitiesAndRewards(
     const initialStepsRate = await movinEarnV2.baseStepsRate();
     const initialMetsRate = await movinEarnV2.baseMetsRate();
     
+    // Get halving rate constants
+    const halvingRateNumerator = BigInt(999);
+    const halvingRateDenominator = BigInt(1000);
+    
     console.log(`Initial rates: ${ethers.formatEther(initialStepsRate)} for steps, ${ethers.formatEther(initialMetsRate)} for METs`);
+    console.log(`Daily decrease rate: ${Number(halvingRateNumerator) / Number(halvingRateDenominator)} (${100 - (Number(halvingRateNumerator) * 100 / Number(halvingRateDenominator))}% decrease)`);
     
     // Advance time by 1 day
     await time.increase(24 * 60 * 60 + 60); // 1 day + 1 minute
     console.log("⏱ Advanced time by 1 day");
     
-    // Record activity to trigger rate decrease check
-    await movinEarnV2.connect(user1).recordActivity(10000, 10);
+    // Record activity to trigger rate decrease check - use safe values
+    await movinEarnV2.connect(user1).recordActivity(5000, 5);
     console.log("✅ Recorded activity to trigger rate check");
     
     // Check new rates
@@ -470,6 +769,20 @@ async function testActivitiesAndRewards(
     if (newStepsRate < initialStepsRate) {
       const decreasePercent = 100 - (Number(newStepsRate) * 100 / Number(initialStepsRate));
       console.log(`✅ Rate decreased by approximately ${decreasePercent.toFixed(2)}%`);
+      
+      // Verify 0.1% decrease
+      const expectedStepsRate = (initialStepsRate * halvingRateNumerator) / halvingRateDenominator;
+      const expectedMetsRate = (initialMetsRate * halvingRateNumerator) / halvingRateDenominator;
+      
+      if (newStepsRate === expectedStepsRate && newMetsRate === expectedMetsRate) {
+        console.log("✅ Rate decrease exactly matches the expected 0.1% reduction");
+      } else if (Math.abs(Number(newStepsRate) - Number(expectedStepsRate)) < Number(1e10)) {
+        console.log("✅ Rate decrease matches the expected 0.1% reduction (with small rounding difference)");
+      } else {
+        console.log("❌ Rate decrease doesn't match the expected 0.1% reduction");
+        console.log(`Expected steps rate: ${ethers.formatEther(expectedStepsRate)}, Actual: ${ethers.formatEther(newStepsRate)}`);
+        console.log(`Expected METs rate: ${ethers.formatEther(expectedMetsRate)}, Actual: ${ethers.formatEther(newMetsRate)}`);
+      }
     } else {
       console.log(`❌ Rate did not decrease as expected`);
     }
@@ -556,14 +869,29 @@ async function testClaimAllStakingRewards(
     
     // Verify all stakes have updated lastClaimed timestamps
     let allTimestampsUpdated = true;
-    for (let i = 0; i < updatedStakeCount; i++) {
-      const stake = await movinEarnV2.connect(user).getUserStake(i);
-      const currentTime = Math.floor(Date.now() / 1000);
-      const timeDiff = Math.abs(Number(stake.lastClaimed) - currentTime);
+    
+    // Get the latest block timestamp to compare against
+    const latestBlock = await ethers.provider.getBlock("latest");
+    if (!latestBlock || !latestBlock.timestamp) {
+      console.log("❌ Could not get latest block timestamp for verification");
+      allTimestampsUpdated = false;
+    } else {
+      const blockTimestamp = latestBlock.timestamp;
+      console.log(`Current blockchain timestamp: ${blockTimestamp}`);
       
-      if (timeDiff > 300) { // Allow 5 minutes difference
-        allTimestampsUpdated = false;
-        console.log(`❌ Stake ${i} lastClaimed timestamp not properly updated`);
+      for (let i = 0; i < updatedStakeCount; i++) {
+        const stake = await movinEarnV2.connect(user).getUserStake(i);
+        const oldLastClaimed = Number(stake.lastClaimed);
+        
+        // The lastClaimed should be very close to the current block timestamp
+        const timeDiff = Math.abs(Number(stake.lastClaimed) - blockTimestamp);
+        
+        if (timeDiff > 5) { // Allow small difference due to execution order
+          allTimestampsUpdated = false;
+          console.log(`❌ Stake ${i} lastClaimed timestamp not properly updated. Expected ~${blockTimestamp}, got ${stake.lastClaimed} (diff: ${timeDiff} seconds)`);
+        } else {
+          console.log(`✅ Stake ${i} lastClaimed properly updated to ${stake.lastClaimed}`);
+        }
       }
     }
     

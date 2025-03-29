@@ -1,8 +1,5 @@
 import { ethers } from "hardhat";
-
-// Contract addresses from deployment
-const MOVIN_TOKEN_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-const MOVIN_EARN_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+import { MOVIN_TOKEN_PROXY_ADDRESS, MOVIN_EARN_PROXY_ADDRESS } from "./contract-addresses";
 
 async function main() {
   console.log("Testing contracts on the local network...");
@@ -16,8 +13,8 @@ async function main() {
   try {
     // Connect to deployed contracts
     console.log("\n1. Connecting to deployed contracts...");
-    const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_ADDRESS);
-    const movinEarn = await ethers.getContractAt("MOVINEarn", MOVIN_EARN_ADDRESS);
+    const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+    const movinEarn = await ethers.getContractAt("MOVINEarn", MOVIN_EARN_PROXY_ADDRESS);
     console.log("✅ Connected to MovinToken at:", await movinToken.getAddress());
     console.log("✅ Connected to MOVINEarn at:", await movinEarn.getAddress());
 
@@ -102,7 +99,7 @@ async function main() {
     const lockPeriod = 1; // 1 month
     
     try {
-      await movinToken.connect(user1).approve(MOVIN_EARN_ADDRESS, stakeAmount);
+      await movinToken.connect(user1).approve(MOVIN_EARN_PROXY_ADDRESS, stakeAmount);
       console.log(`✅ User1 approved MOVINEarn to spend ${ethers.formatEther(stakeAmount)} tokens`);
       
       // Stake tokens

@@ -1,8 +1,5 @@
 import { ethers, upgrades } from "hardhat";
-import { MovinToken } from "../typechain-types";
-
-// Contract address from deployment
-const MOVIN_TOKEN_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+import { MOVIN_TOKEN_PROXY_ADDRESS } from "./contract-addresses";
 
 async function main() {
   console.log("Testing MovinToken upgrade to MovinTokenV2...");
@@ -14,7 +11,7 @@ async function main() {
   console.log("User2:", user2.address);
 
   // Get current contract instance
-  const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_ADDRESS);
+  const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
 
   // 1. Verify current state and functionality
   console.log("\n=== CURRENT CONTRACT STATE ===");
@@ -36,11 +33,11 @@ async function main() {
   try {
     const MovinTokenV2 = await ethers.getContractFactory("MovinTokenV2");
     console.log("Deploying new implementation...");
-    const upgradedMovinToken = await upgrades.upgradeProxy(MOVIN_TOKEN_ADDRESS, MovinTokenV2);
+    const upgradedMovinToken = await upgrades.upgradeProxy(MOVIN_TOKEN_PROXY_ADDRESS, MovinTokenV2);
     await upgradedMovinToken.waitForDeployment();
 
     console.log("✅ MovinToken upgraded at:", await upgradedMovinToken.getAddress());
-    console.log("New implementation address:", await upgrades.erc1967.getImplementationAddress(MOVIN_TOKEN_ADDRESS));
+    console.log("New implementation address:", await upgrades.erc1967.getImplementationAddress(MOVIN_TOKEN_PROXY_ADDRESS));
     
     // Verify state is preserved
     console.log("\nVerifying state preservation after upgrade:");

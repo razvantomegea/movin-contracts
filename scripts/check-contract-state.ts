@@ -1,9 +1,5 @@
 import { ethers } from "hardhat";
-
-// The proxy address on our local Hardhat node
-const MOVIN_EARN_PROXY_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
-// We'll fetch the implementation address
-const EXPECTED_IMPLEMENTATION_ADDRESS = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
+import { MOVIN_EARN_IMPLEMENTATION_ADDRESS, MOVIN_EARN_PROXY_ADDRESS } from "./contract-addresses";
 
 async function main() {
   console.log("Checking MOVINEarnV2 contract state on local node...");
@@ -30,10 +26,10 @@ async function main() {
       console.log(`Current implementation address: ${implementationAddress}`);
       
       // Verify implementation matches expected
-      if (implementationAddress.toLowerCase() === EXPECTED_IMPLEMENTATION_ADDRESS.toLowerCase()) {
+      if (implementationAddress.toLowerCase() === MOVIN_EARN_IMPLEMENTATION_ADDRESS.toLowerCase()) {
         console.log("✅ Implementation address matches expected address");
       } else {
-        console.log(`⚠️ Implementation address does not match expected address (${EXPECTED_IMPLEMENTATION_ADDRESS})`);
+        console.log(`⚠️ Implementation address does not match expected address (${MOVIN_EARN_IMPLEMENTATION_ADDRESS})`);
       }
       
       // Try to get the reward rates
