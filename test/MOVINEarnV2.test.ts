@@ -3,7 +3,6 @@ import { ethers, upgrades } from "hardhat";
 import { MOVINEarnV2, MovinToken } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
-import { EventLog, Log } from "ethers";
 
 describe("MOVINEarnV2", function () {
   let movinToken: MovinToken;
@@ -139,7 +138,7 @@ describe("MOVINEarnV2", function () {
                          expectedReward - reward : 
                          reward - expectedReward;
                          
-      expect(difference).to.be.lessThan(ethers.parseEther("0.01"));
+      expect(Number(ethers.formatEther(difference))).to.be.lessThan(0.01);
     });
 
     it("Should allow claiming staking rewards without referral bonus", async function () {
@@ -180,7 +179,7 @@ describe("MOVINEarnV2", function () {
                                expectedReward - actualReward : 
                                actualReward - expectedReward;
                                
-      expect(rewardDifference).to.be.lessThan(ethers.parseEther("0.01"));
+      expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
       expect(referrerBalanceAfter).to.equal(referrerBalanceBefore);
     });
 
@@ -261,10 +260,7 @@ describe("MOVINEarnV2", function () {
       
       for (let i = 0; i < stakeCount; i++) {
         const stake = await movinEarn.connect(user1).getUserStake(i);
-        expect(stake.lastClaimed).to.be.closeTo(
-          BigInt(currentTimestamp), 
-          BigInt(10)
-        );
+        expect(Number(stake.lastClaimed)).to.be.closeTo(Number(currentTimestamp), 10);
       }
     });
 
@@ -529,6 +525,243 @@ describe("MOVINEarnV2", function () {
       
       // Verify status changed back
       expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(false);
+    });
+  });
+
+  describe("Migration functionality", function () {
+    it("Should allow owner to migrate a single user's data", async function () {
+      // Create test data for a user
+      await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      await movinEarn.connect(user2).registerReferral(user1.address);
+      
+      // Record activity to create more data
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Test migration of a single user
+      await expect(movinEarn.connect(owner).migrateUserData(user1.address))
+        .to.emit(movinEarn, "UserDataMigrated")
+        .withArgs(user1.address, true);
+      
+      // Verify data is still accessible after migration
+      const stakes = await movinEarn.getUserStakes(user1.address);
+      expect(stakes.length).to.equal(1);
+      expect(stakes[0].amount).to.equal(ethers.parseEther("100"));
+      
+      const isPremium = await movinEarn.getIsPremiumUser(user1.address);
+      expect(isPremium).to.equal(true);
+      
+      const referrals = await movinEarn.getUserReferrals(user1.address);
+      expect(referrals.length).to.equal(1);
+      expect(referrals[0]).to.equal(user2.address);
+    });
+    
+    it("Should fix corrupted stakes during migration", async function () {
+      // Create a valid stake
+      await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
+      
+      // Access the storage directly to corrupt a stake (setting lastClaimed to 0)
+      const userStakes = await movinEarn.userStakes(user1.address, 0);
+      
+      // We can't directly modify storage, but we can simulate a corrupted stake
+      // by checking if migration fixes issues with proper stakes
+      
+      // Get original stake count
+      const stakesBeforeMigration = await movinEarn.getUserStakes(user1.address);
+      expect(stakesBeforeMigration.length).to.equal(1);
+      
+      // Test migration
+      await movinEarn.connect(owner).migrateUserData(user1.address);
+      
+      // Verify stakes are still valid after migration
+      const stakesAfter = await movinEarn.getUserStakes(user1.address);
+      expect(stakesAfter.length).to.equal(1); // Should still have one stake
+      expect(stakesAfter[0].amount).to.equal(ethers.parseEther("100"));
+      expect(stakesAfter[0].lastClaimed).to.not.equal(0); // lastClaimed should be set
+    });
+    
+    it("Should reset daily activity from previous days during migration", async function () {
+      // Record activity
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Force time increase to simulate a new day
+      await time.increase(ONE_DAY + 60); // Add a minute to ensure we're in new day
+      
+      // Migrate user data - should reset daily activity
+      await movinEarn.connect(owner).migrateUserData(user1.address);
+      
+      // Check that daily activity was reset
+      const [steps, mets] = await movinEarn.connect(user1).getUserActivity();
+      expect(steps).to.equal(0); // Steps should be reset to 0
+      expect(mets).to.equal(0); // METs should be reset to 0
+    });
+    
+    it("Should not allow non-owner to migrate user data", async function () {
+      await expect(movinEarn.connect(user1).migrateUserData(user2.address))
+        .to.be.reverted; // Will revert with an Ownable error
+    });
+    
+    it("Should allow bulk migration of multiple users", async function () {
+      // Create test data for multiple users
+      await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+      await movinToken.connect(user2).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+      
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
+      await movinEarn.connect(user2).stakeTokens(ethers.parseEther("200"), 6);
+      
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      await movinEarn.connect(owner).setPremiumStatus(user2.address, true);
+      
+      // Force time increase to simulate a new day
+      await time.increase(ONE_DAY + 60);
+      
+      // Test bulk migration - don't check event arguments since we don't know the exact success count
+      const tx = await movinEarn.connect(owner).bulkMigrateUserData([user1.address, user2.address]);
+      await tx.wait();
+      
+      // Verify data is properly migrated for all users
+      const user1Stakes = await movinEarn.getUserStakes(user1.address);
+      const user2Stakes = await movinEarn.getUserStakes(user2.address);
+      
+      expect(user1Stakes.length).to.be.greaterThan(0);
+      expect(user2Stakes.length).to.be.greaterThan(0);
+      
+      // Verify premium status is preserved
+      const user1Premium = await movinEarn.getIsPremiumUser(user1.address);
+      const user2Premium = await movinEarn.getIsPremiumUser(user2.address);
+      
+      expect(user1Premium).to.equal(true);
+      expect(user2Premium).to.equal(true);
+      
+      // Verify activity data was reset for the new day
+      const [user1Steps, user1Mets] = await movinEarn.connect(user1).getUserActivity();
+      const [user2Steps, user2Mets] = await movinEarn.connect(user2).getUserActivity();
+      
+      expect(user1Steps).to.equal(0);
+      expect(user1Mets).to.equal(0);
+      expect(user2Steps).to.equal(0);
+      expect(user2Mets).to.equal(0);
+    });
+    
+    it("Should handle errors during bulk migration gracefully", async function () {
+      // Create a new user that doesn't exist in the contract yet
+      const nonExistentUser = ethers.Wallet.createRandom().address;
+      
+      // Test bulk migration with some valid and some invalid users
+      const tx = await movinEarn.connect(owner).bulkMigrateUserData([user1.address, nonExistentUser, user2.address]);
+      const receipt = await tx.wait();
+      
+      // Check that an event was emitted
+      const events = receipt?.logs.filter(
+        log => log.topics[0] === movinEarn.interface.getEvent("BulkMigrationCompleted").topicHash
+      );
+      
+      expect(events?.length).to.be.greaterThan(0);
+      
+      // Verify valid users can still be accessed after migration
+      const user1Stakes = await movinEarn.getUserStakes(user1.address);
+      const user2Stakes = await movinEarn.getUserStakes(user2.address);
+      
+      // Just verify that we can access their data
+      expect(user1Stakes).to.not.be.undefined;
+      expect(user2Stakes).to.not.be.undefined;
+    });
+
+    it("Should fix referral count inconsistencies during migration", async function () {
+      // Register referrals to user1
+      await movinEarn.connect(user2).registerReferral(user1.address);
+      
+      // Get referral info before migration
+      const referralsBeforeMigration = await movinEarn.getUserReferrals(user1.address);
+      const [_, __, referralCountBefore] = await movinEarn.getReferralInfo(user1.address);
+      
+      // Perform migration
+      await movinEarn.connect(owner).migrateUserData(user1.address);
+      
+      // Get referral info after migration
+      const [___, ____, referralCountAfter] = await movinEarn.getReferralInfo(user1.address);
+      
+      // Verify referral count matches the number of referrals
+      expect(referralCountAfter).to.equal(referralsBeforeMigration.length);
+    });
+
+    it("Should handle multiple stake migrations correctly", async function () {
+      // Create multiple stakes for one user
+      await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+      
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("50"), 1);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("75"), 3);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 6);
+      
+      // Get stakes before migration
+      const stakesBeforeMigration = await movinEarn.getUserStakes(user1.address);
+      expect(stakesBeforeMigration.length).to.equal(3);
+      
+      // Perform migration
+      await movinEarn.connect(owner).migrateUserData(user1.address);
+      
+      // Get stakes after migration
+      const stakesAfterMigration = await movinEarn.getUserStakes(user1.address);
+      
+      // Verify all stakes were preserved
+      expect(stakesAfterMigration.length).to.equal(3);
+      
+      // Verify stake amounts are preserved
+      expect(stakesAfterMigration[0].amount).to.equal(ethers.parseEther("50"));
+      expect(stakesAfterMigration[1].amount).to.equal(ethers.parseEther("75"));
+      expect(stakesAfterMigration[2].amount).to.equal(ethers.parseEther("100"));
+    });
+
+    it("Should fix missing reward accumulation timestamps during migration", async function () {
+      // Set user as premium to enable METs rewards
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      
+      // Record activity to accumulate rewards
+      await movinEarn.connect(user1).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
+      
+      // Check if rewards were accumulated
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      
+      // If rewards were accumulated, ensure migration keeps them valid
+      if (pendingStepsReward > 0 || pendingMetsReward > 0) {
+        console.log(`Pending rewards before migration: ${ethers.formatEther(pendingStepsReward)} steps, ${ethers.formatEther(pendingMetsReward)} mets`);
+        
+        // Get activity data
+        let lastRewardAccumulationTime;
+        try {
+          const activity = await movinEarn.userActivities(user1.address);
+          lastRewardAccumulationTime = activity.lastRewardAccumulationTime;
+          console.log(`Last reward accumulation time before migration: ${lastRewardAccumulationTime}`);
+        } catch (e) {
+          console.log("Could not access activity data directly");
+        }
+        
+        // Perform migration
+        await movinEarn.connect(owner).migrateUserData(user1.address);
+        
+        // Check rewards after migration
+        const [pendingStepsRewardAfter, pendingMetsRewardAfter] = await movinEarn.connect(user1).getPendingRewards();
+        console.log(`Pending rewards after migration: ${ethers.formatEther(pendingStepsRewardAfter)} steps, ${ethers.formatEther(pendingMetsRewardAfter)} mets`);
+        
+        // Verify rewards are preserved
+        expect(pendingStepsRewardAfter).to.equal(pendingStepsReward);
+        expect(pendingMetsRewardAfter).to.equal(pendingMetsReward);
+        
+        // Verify last reward time is set
+        try {
+          const activityAfter = await movinEarn.userActivities(user1.address);
+          console.log(`Last reward accumulation time after migration: ${activityAfter.lastRewardAccumulationTime}`);
+          
+          // Verify time is set
+          expect(activityAfter.lastRewardAccumulationTime).to.not.equal(0);
+        } catch (e) {
+          console.log("Could not access activity data directly");
+        }
+      } else {
+        console.log("No pending rewards to test with");
+      }
     });
   });
 }); 

@@ -115,6 +115,10 @@ contract MOVINEarnV2 is
         uint256 stakeCount
     );
 
+    // V2: Event for bulk data migration
+    event UserDataMigrated(address indexed user, bool success);
+    event BulkMigrationCompleted(uint256 totalUsers, uint256 successCount);
+
     mapping(uint256 => uint256) public lockPeriodMultipliers;
     mapping(address => Stake[]) public userStakes;
     mapping(address => UserActivity) public userActivities;
@@ -717,4 +721,86 @@ contract MOVINEarnV2 is
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyOwner {}
+
+    // V2: Function to migrate data for multiple users at once
+    function bulkMigrateUserData(address[] calldata users) external onlyOwner {
+        uint256 successCount = 0;
+
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
+            bool success = true;
+
+            try this.migrateUserData(user) {
+                successCount++;
+                emit UserDataMigrated(user, true);
+            } catch {
+                emit UserDataMigrated(user, false);
+                success = false;
+            }
+        }
+
+        emit BulkMigrationCompleted(users.length, successCount);
+    }
+
+    // V2: Function to migrate a single user's data
+    function migrateUserData(address user) external onlyOwner {
+        bool stakesMigrated = false;
+        bool activityMigrated = false;
+        bool referralMigrated = false;
+
+        // First verify and migrate stakes data if needed
+        Stake[] storage stakes = userStakes[user];
+        // Ensure stakes are valid - if stake amount is 0, it's likely corrupted
+        for (uint256 i = 0; i < stakes.length; i++) {
+            if (stakes[i].amount == 0 || stakes[i].startTime == 0) {
+                // Remove invalid stake to prevent issues
+                _removeStake(user, i);
+                i--; // Adjust index after removal
+            } else if (stakes[i].lastClaimed == 0) {
+                // Fix stake with missing lastClaimed
+                stakes[i].lastClaimed = stakes[i].startTime;
+            }
+        }
+        stakesMigrated = true;
+
+        // Verify and migrate activity data
+        UserActivity storage activity = userActivities[user];
+        if (
+            activity.lastRewardAccumulationTime == 0 &&
+            (activity.pendingStepsRewards > 0 ||
+                activity.pendingMetsRewards > 0)
+        ) {
+            // Fix missing timestamp for pending rewards
+            activity.lastRewardAccumulationTime = block.timestamp;
+        }
+
+        // Reset daily activity if it's from a previous day
+        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
+        if (activity.lastMidnightReset < currentMidnight) {
+            activity.dailySteps = 0;
+            activity.dailyMets = 0;
+            activity.lastMidnightReset = currentMidnight;
+        }
+        activityMigrated = true;
+
+        // Migrate referral data
+        ReferralInfo storage referralInfo = userReferrals[user];
+
+        // Check if user has referrals but no count is recorded
+        address[] storage currentUserReferrals = referrals[user];
+        if (
+            currentUserReferrals.length > 0 && referralInfo.referralCount == 0
+        ) {
+            referralInfo.referralCount = currentUserReferrals.length;
+        }
+        referralMigrated = true;
+
+        // Emit success only if all components were migrated successfully
+        if (stakesMigrated && activityMigrated && referralMigrated) {
+            emit UserDataMigrated(user, true);
+        } else {
+            emit UserDataMigrated(user, false);
+            revert("Migration failed");
+        }
+    }
 }
