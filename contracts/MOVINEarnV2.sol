@@ -49,8 +49,6 @@ contract MOVINEarnV2 is
         uint256 lastRewardAccumulationTime;
         bool isPremium;
     }
-
-    // V2: Add referral structure
     struct ReferralInfo {
         address referrer;
         uint256 earnedBonus;
@@ -85,10 +83,10 @@ contract MOVINEarnV2 is
         uint256 totalReward
     );
     event PremiumStatusChanged(address indexed user, bool status);
-    event RewardsRateHalved(
+    event RewardsRateDecreased(
         uint256 newStepsRate,
         uint256 newMetsRate,
-        uint256 nextHalvingTimestamp
+        uint256 nextDecreaseTimestamp
     );
     event RewardsAccumulated(
         address indexed user,
@@ -97,17 +95,24 @@ contract MOVINEarnV2 is
     );
     event Deposit(address indexed sender, uint256 amount);
 
-    // V2: New events
     event ReferralRegistered(address indexed user, address indexed referrer);
     event ReferralBonusPaid(
         address indexed referrer,
         address indexed referee,
         uint256 amount
     );
-    event EarlyWithdrawalPenalty(
+    event ActivityReferralBonusEarned(
+        address indexed referrer,
         address indexed user,
-        uint256 amount,
-        uint256 penalty
+        uint256 stepsBonus,
+        uint256 metsBonus
+    );
+
+    event AllStakingRewardsClaimed(
+        address indexed user,
+        uint256 totalReward,
+        uint256 totalBurned,
+        uint256 stakeCount
     );
 
     mapping(uint256 => uint256) public lockPeriodMultipliers;
@@ -122,10 +127,7 @@ contract MOVINEarnV2 is
     uint256 public constant MAX_DAILY_STEPS = 25_000;
     uint256 public constant MAX_DAILY_METS = 50;
     uint256 public constant REWARDS_BURN_FEES_PERCENT = 1;
-
-    // V2: New constants
-    uint256 public constant REFERRAL_BONUS_PERCENT = 5; // 5% of referee's staking rewards
-    uint256 public constant EARLY_WITHDRAWAL_PENALTY_PERCENT = 10; // 10% penalty for early withdrawals
+    uint256 public constant ACTIVITY_REFERRAL_BONUS_PERCENT = 1; // 1% of referee's activity points
 
     address public migrator;
 
@@ -149,7 +151,7 @@ contract MOVINEarnV2 is
 
         movinToken = MovinToken(_tokenAddress);
         erc20MovinToken = ERC20Upgradeable(_tokenAddress);
-        rewardHalvingTimestamp = block.timestamp + 365 days;
+        rewardHalvingTimestamp = (block.timestamp / 86400) * 86400; // Set to current day's midnight
         baseStepsRate = 1 * 10 ** 18;
         baseMetsRate = 1 * 10 ** 18;
 
@@ -162,7 +164,8 @@ contract MOVINEarnV2 is
 
     // V2: Initialize function for upgrading to V2 (not used in actual upgrade since state is preserved)
     function initializeV2() public reinitializer(2) {
-        // No initialization needed for V2
+        // Reset rewardHalvingTimestamp to current midnight to start the daily decrease
+        rewardHalvingTimestamp = (block.timestamp / 86400) * 86400;
     }
 
     modifier onlyMigrator() {
@@ -327,7 +330,8 @@ contract MOVINEarnV2 is
         }
 
         uint256 reward = calculateStakingReward(stakeIndex);
-        if (reward == 0) revert NoRewardsAvailable();
+        // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
+        if (reward == 0 || reward < 0.001 ether) revert NoRewardsAvailable();
 
         if (movinToken.balanceOf(address(this)) < reward) {
             revert InsufficientBalance(
@@ -340,20 +344,6 @@ contract MOVINEarnV2 is
         uint256 burnAmount = (reward * REWARDS_BURN_FEES_PERCENT) / 100;
         uint256 userReward = reward - burnAmount;
 
-        // V2: Add referral bonus if the user has a referrer
-        if (userReferrals[msg.sender].referrer != address(0)) {
-            address referrer = userReferrals[msg.sender].referrer;
-            uint256 referralBonus = (userReward * REFERRAL_BONUS_PERCENT) / 100;
-
-            // Only apply bonus if there's sufficient balance
-            if (movinToken.balanceOf(address(this)) >= referralBonus) {
-                erc20MovinToken.transfer(referrer, referralBonus);
-                userReferrals[referrer].earnedBonus += referralBonus;
-
-                emit ReferralBonusPaid(referrer, msg.sender, referralBonus);
-            }
-        }
-
         erc20MovinToken.transfer(msg.sender, userReward);
         movinToken.burn(burnAmount);
 
@@ -362,6 +352,69 @@ contract MOVINEarnV2 is
             stakeIndex,
             userReward,
             burnAmount
+        );
+    }
+
+    /**
+     * @dev Claims staking rewards from all active stakes in one transaction
+     * Aggregates rewards from all stakes, applies burn fee once, and transfers total to user
+     */
+    function claimAllStakingRewards()
+        external
+        nonReentrant
+        whenNotPausedWithRevert
+    {
+        uint256 stakeCount = getUserStakeCount();
+        if (stakeCount == 0) revert NoRewardsAvailable();
+
+        // First pass: calculate total rewards and identify stakes with rewards
+        uint256 totalReward = 0;
+        bool hasRewards = false;
+
+        for (uint256 i = 0; i < stakeCount; i++) {
+            uint256 reward = calculateStakingReward(i);
+            if (reward > 0) {
+                totalReward += reward;
+                hasRewards = true;
+            }
+        }
+
+        // Explicit check for rewards availability
+        // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
+        if (!hasRewards || totalReward == 0 || totalReward < 0.001 ether)
+            revert NoRewardsAvailable();
+
+        // Check if contract has enough balance
+        if (movinToken.balanceOf(address(this)) < totalReward) {
+            revert InsufficientBalance(
+                movinToken.balanceOf(address(this)),
+                totalReward
+            );
+        }
+
+        // Update lastClaimed timestamps for all stakes with rewards
+        for (uint256 i = 0; i < stakeCount; i++) {
+            if (calculateStakingReward(i) > 0) {
+                userStakes[msg.sender][i].lastClaimed = block.timestamp;
+            }
+        }
+
+        // Calculate burn amount and user reward
+        uint256 burnAmount = (totalReward * REWARDS_BURN_FEES_PERCENT) / 100;
+        uint256 userReward = totalReward - burnAmount;
+
+        // Transfer tokens to user
+        erc20MovinToken.transfer(msg.sender, userReward);
+
+        // Burn specified amount
+        movinToken.burn(burnAmount);
+
+        // Emit event
+        emit AllStakingRewardsClaimed(
+            msg.sender,
+            userReward,
+            burnAmount,
+            stakeCount
         );
     }
 
@@ -375,19 +428,14 @@ contract MOVINEarnV2 is
 
         Stake memory stake = getUserStake(stakeIndex);
         uint256 unlockTime = stake.startTime + stake.lockDuration;
-        uint256 penalty = 0;
 
-        // V2: Apply early withdrawal penalty if still locked
+        // Check if the lock period is still active
         if (block.timestamp < unlockTime) {
-            // For V2, allow early withdrawal with penalty
-            penalty = (stake.amount * EARLY_WITHDRAWAL_PENALTY_PERCENT) / 100;
-            emit EarlyWithdrawalPenalty(msg.sender, stake.amount, penalty);
+            revert LockPeriodActive(unlockTime);
         }
 
         _removeStake(msg.sender, stakeIndex);
-        uint256 burnAmount = (stake.amount * REWARDS_BURN_FEES_PERCENT) /
-            100 +
-            penalty;
+        uint256 burnAmount = (stake.amount * REWARDS_BURN_FEES_PERCENT) / 100;
         uint256 userPayout = stake.amount - burnAmount;
         erc20MovinToken.transfer(msg.sender, userPayout);
         movinToken.burn(burnAmount);
@@ -395,7 +443,6 @@ contract MOVINEarnV2 is
         emit Unstaked(msg.sender, stake.amount, stakeIndex);
     }
 
-    // V2: New function to register referral
     function registerReferral(
         address referrer
     ) external whenNotPausedWithRevert {
@@ -415,7 +462,6 @@ contract MOVINEarnV2 is
         emit ReferralRegistered(msg.sender, referrer);
     }
 
-    // V2: New function to get referral info
     function getReferralInfo(
         address user
     )
@@ -449,7 +495,53 @@ contract MOVINEarnV2 is
         if (activity.lastMidnightReset < currentMidnight) {
             activity.dailySteps = 0;
             activity.dailyMets = 0;
-            activity.lastMidnightReset = currentMidnight;
+        }
+
+        activity.lastMidnightReset = currentMidnight;
+
+        // Apply referral bonus to steps and mets
+        address referrer = userReferrals[msg.sender].referrer;
+        uint256 stepsBonus = 0;
+        uint256 metsBonus = 0;
+
+        if (referrer != address(0)) {
+            stepsBonus = (newSteps * ACTIVITY_REFERRAL_BONUS_PERCENT) / 100;
+            metsBonus = (newMets * ACTIVITY_REFERRAL_BONUS_PERCENT) / 100;
+
+            // Award bonus to referrer's activity
+            UserActivity storage referrerActivity = userActivities[referrer];
+
+            // Check if the referrer needs a daily reset too
+            if (referrerActivity.lastMidnightReset < currentMidnight) {
+                referrerActivity.dailySteps = 0;
+                referrerActivity.dailyMets = 0;
+                referrerActivity.lastMidnightReset = currentMidnight;
+            }
+
+            // Add bonus steps
+            referrerActivity.dailySteps += stepsBonus;
+
+            // Only add mets bonus if referrer is premium
+            if (referrerActivity.isPremium) {
+                referrerActivity.dailyMets += metsBonus;
+            }
+
+            // Cap at maximum daily values
+            if (referrerActivity.dailySteps > MAX_DAILY_STEPS) {
+                referrerActivity.dailySteps = MAX_DAILY_STEPS;
+            }
+
+            if (referrerActivity.dailyMets > MAX_DAILY_METS) {
+                referrerActivity.dailyMets = MAX_DAILY_METS;
+            }
+
+            // Emit event for the referral bonus
+            emit ActivityReferralBonusEarned(
+                referrer,
+                msg.sender,
+                stepsBonus,
+                metsBonus
+            );
         }
 
         // Update activity data
@@ -460,7 +552,7 @@ contract MOVINEarnV2 is
             activity.dailyMets += newMets;
         }
 
-        _checkHalving();
+        _checkDailyDecrease();
 
         uint256 stepsReward = 0;
         if (activity.dailySteps >= STEPS_THRESHOLD) {
@@ -525,7 +617,7 @@ contract MOVINEarnV2 is
     }
 
     function claimRewards() external nonReentrant whenNotPausedWithRevert {
-        _checkHalving();
+        _checkDailyDecrease();
 
         UserActivity storage activity = userActivities[msg.sender];
 
@@ -559,20 +651,6 @@ contract MOVINEarnV2 is
         uint256 burnAmount = (totalReward * REWARDS_BURN_FEES_PERCENT) / 100;
         uint256 reward = totalReward - burnAmount;
 
-        // V2: Add referral bonus if the user has a referrer
-        if (userReferrals[msg.sender].referrer != address(0)) {
-            address referrer = userReferrals[msg.sender].referrer;
-            uint256 referralBonus = (reward * REFERRAL_BONUS_PERCENT) / 100;
-
-            // Only apply bonus if there's sufficient balance
-            if (movinToken.balanceOf(address(this)) >= referralBonus) {
-                erc20MovinToken.transfer(referrer, referralBonus);
-                userReferrals[referrer].earnedBonus += referralBonus;
-
-                emit ReferralBonusPaid(referrer, msg.sender, referralBonus);
-            }
-        }
-
         erc20MovinToken.transfer(msg.sender, reward);
         movinToken.burn(burnAmount);
 
@@ -598,16 +676,27 @@ contract MOVINEarnV2 is
         lockPeriodMultipliers[months] = multiplier;
     }
 
-    function _checkHalving() internal {
-        if (block.timestamp >= rewardHalvingTimestamp) {
-            baseStepsRate = baseStepsRate / 2;
-            baseMetsRate = baseMetsRate / 2;
-            rewardHalvingTimestamp += 365 days;
+    function _checkDailyDecrease() internal {
+        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
 
-            emit RewardsRateHalved(
+        if (currentMidnight > rewardHalvingTimestamp) {
+            // Calculate number of days passed since last decrease
+            uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) /
+                86400;
+
+            // Apply 1% decrease for each day
+            for (uint256 i = 0; i < daysPassed; i++) {
+                baseStepsRate = (baseStepsRate * 99) / 100; // Decrease by 1%
+                baseMetsRate = (baseMetsRate * 99) / 100; // Decrease by 1%
+            }
+
+            // Update the last decrease timestamp
+            rewardHalvingTimestamp = currentMidnight;
+
+            emit RewardsRateDecreased(
                 baseStepsRate,
                 baseMetsRate,
-                rewardHalvingTimestamp
+                rewardHalvingTimestamp + 1 days
             );
         }
     }

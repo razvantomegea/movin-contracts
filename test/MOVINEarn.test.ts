@@ -265,6 +265,74 @@ describe("MOVINEarn", function () {
       expect(recordedMets).to.equal(7);
     });
 
+    it("Should update lastMidnightReset correctly on every recordActivity call", async function () {
+      // Get current midnight timestamp
+      const now = await time.latest();
+      const currentMidnight = Math.floor(now / 86400) * 86400;
+      
+      // Record activity
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Check that lastMidnightReset is set to current midnight
+      const activity = await movinEarn.userActivities(user1.address);
+      expect(activity.lastMidnightReset).to.equal(currentMidnight);
+    });
+
+    it("Should reset activity at midnight but keep lastMidnightReset updated", async function () {
+      // Record activity
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Check that activity was recorded
+      let [recordedSteps, recordedMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(recordedSteps).to.equal(5000);
+      expect(recordedMets).to.equal(5);
+      
+      // Advance time to next day (add 24 hours + 1 second)
+      await time.increase(ONE_DAY + 1);
+      
+      // Check that getUserActivity returns zeros before new activity is recorded
+      [recordedSteps, recordedMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(recordedSteps).to.equal(0);
+      expect(recordedMets).to.equal(0);
+      
+      // Record new activity
+      await movinEarn.connect(user1).recordActivity(3000, 3);
+      
+      // Get new midnight timestamp
+      const now = await time.latest();
+      const newMidnight = Math.floor(now / 86400) * 86400;
+      
+      // Check that lastMidnightReset is updated to new midnight
+      const activity = await movinEarn.userActivities(user1.address);
+      expect(activity.lastMidnightReset).to.equal(newMidnight);
+      
+      // Check that only the new activity is recorded
+      [recordedSteps, recordedMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(recordedSteps).to.equal(3000);
+      expect(recordedMets).to.equal(3);
+    });
+    
+    it("Should always update lastMidnightReset even if no activity reset happens", async function () {
+      // Record initial activity
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Record more activity in the same day
+      await movinEarn.connect(user1).recordActivity(3000, 3);
+      
+      // Get current midnight timestamp
+      const now = await time.latest();
+      const currentMidnight = Math.floor(now / 86400) * 86400;
+      
+      // Check that lastMidnightReset is still at current midnight
+      const activity = await movinEarn.userActivities(user1.address);
+      expect(activity.lastMidnightReset).to.equal(currentMidnight);
+      
+      // Check that activity accumulated
+      const [recordedSteps, recordedMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(recordedSteps).to.equal(8000);
+      expect(recordedMets).to.equal(8);
+    });
+
     it("Should accumulate rewards when threshold is reached", async function () {
       // Record activity that exceeds thresholds
       await movinEarn.connect(user1).recordActivity(STEPS_THRESHOLD + 1000, METS_THRESHOLD + 2);
@@ -278,22 +346,6 @@ describe("MOVINEarn", function () {
       
       expect(stepsReward).to.equal(expectedStepsReward);
       expect(metsReward).to.equal(expectedMetsReward);
-    });
-
-    it("Should reset activity data at midnight", async function () {
-      // Record activity
-      await movinEarn.connect(user1).recordActivity(5000, 5);
-      
-      // Advance time to next day (add 24 hours + 1 second)
-      await time.increase(ONE_DAY + 1);
-      
-      // Record new activity
-      await movinEarn.connect(user1).recordActivity(3000, 3);
-      
-      // Check that only the new activity is recorded
-      const [recordedSteps, recordedMets] = await movinEarn.connect(user1).getUserActivity();
-      expect(recordedSteps).to.equal(3000);
-      expect(recordedMets).to.equal(3);
     });
 
     it("Should reject invalid activity input", async function () {
