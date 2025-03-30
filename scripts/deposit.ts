@@ -21,7 +21,7 @@ async function main() {
   const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS, wallet);
   
   // Amount to deposit (in ether units - will be converted to wei)
-  const depositAmount = ethers.parseEther("10000000000");
+  const depositAmount = ethers.parseEther("90000000");
   
   // Check token balance
   const tokenBalance = await movinToken.balanceOf(wallet.address);
