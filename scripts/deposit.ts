@@ -33,16 +33,19 @@ async function main() {
   }
 
   // Approve tokens for deposit
-  console.log(`Approving ${ethers.formatEther(depositAmount)} MOVIN tokens for deposit...`);
-  const approveTx = await movinToken.approve(MOVIN_EARN_PROXY_ADDRESS, depositAmount);
-  await approveTx.wait();
-  console.log("✅ Tokens approved");
+  // console.log(`Approving ${ethers.formatEther(depositAmount)} MOVIN tokens for deposit...`);
+  // const approveTx = await movinToken.approve(MOVIN_EARN_PROXY_ADDRESS, depositAmount);
+  // await approveTx.wait();
+  // console.log("✅ Tokens approved");
   
   // Deposit tokens
-  console.log(`Depositing ${ethers.formatEther(depositAmount)} MOVIN tokens...`);
-  const depositTx = await movinEarnV2.deposit(depositAmount);
-  await depositTx.wait();
-  console.log("✅ Deposit successful");
+  // console.log(`Depositing ${ethers.formatEther(depositAmount)} MOVIN tokens...`);
+  // const depositTx = await movinEarnV2.deposit(depositAmount);
+  // await depositTx.wait();
+  // console.log("✅ Deposit successful");
+
+  const pendingRewards = await movinEarnV2.getPendingRewards();
+  console.log(`Pending rewards: ${ethers.formatEther(pendingRewards[0])} steps, ${ethers.formatEther(pendingRewards[1])} mets`);
   
   // Verify deposit by checking contract balance
   const contractBalance = await movinToken.balanceOf(MOVIN_EARN_PROXY_ADDRESS);

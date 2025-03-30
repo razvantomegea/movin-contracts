@@ -45,12 +45,10 @@ contract MOVINEarn is
         uint256 dailyMets;
         uint256 pendingStepsRewards;
         uint256 pendingMetsRewards;
-        uint256 lastMidnightReset;
+        uint256 lastDayOfYearReset;
         uint256 lastRewardAccumulationTime;
         bool isPremium;
-        uint256 hourlySteps;
-        uint256 hourlyMets;
-        uint256 lastHourlyReset;
+        uint256 lastUpdated;
     }
     struct ReferralInfo {
         address referrer;
@@ -67,8 +65,7 @@ contract MOVINEarn is
     event StakingRewardsClaimed(
         address indexed user,
         uint256 stakeIndex,
-        uint256 reward,
-        uint256 burned
+        uint256 reward
     );
     event Unstaked(address indexed user, uint256 amount, uint256 stakeIndex);
     event ActivityRecorded(
@@ -108,9 +105,10 @@ contract MOVINEarn is
     event AllStakingRewardsClaimed(
         address indexed user,
         uint256 totalReward,
-        uint256 totalBurned,
         uint256 stakeCount
     );
+
+    event Minted(address indexed user, uint256 amount);
 
     // V2: Event for bulk data migration
     event UserDataMigrated(address indexed user, bool success);
@@ -127,9 +125,9 @@ contract MOVINEarn is
     uint256 public baseMetsRate;
     uint256 public constant MAX_DAILY_STEPS = 25_000;
     uint256 public constant MAX_DAILY_METS = 50;
-    uint256 public constant MAX_HOURLY_STEPS = 10_000;
-    uint256 public constant MAX_HOURLY_METS = 10;
-    uint256 public constant REWARDS_BURN_FEES_PERCENT = 1;
+    uint256 public constant MAX_STEPS_PER_MINUTE = 200;
+    uint256 public constant MAX_METS_PER_MINUTE = 1;
+    uint256 public constant UNSTAKE_BURN_FEES_PERCENT = 1;
     uint256 public constant REFERRAL_BONUS_PERCENT = 1; // 1% of referee's claimed rewards
     uint256 public constant HALVING_DECREASE_PERCENT = 1; // Represents 0.1% (used for documentation only)
     uint256 public constant HALVING_RATE_NUMERATOR = 999; // 999/1000 = 0.999 (99.9%)
@@ -170,8 +168,8 @@ contract MOVINEarn is
 
     // V2: Initialize function for upgrading to V2 (not used in actual upgrade since state is preserved)
     function initializeV2() public reinitializer(2) {
-        // Reset rewardHalvingTimestamp to current midnight to start the daily decrease
-        rewardHalvingTimestamp = (block.timestamp / 86400) * 86400;
+        // No changes to rewardHalvingTimestamp to preserve the existing halving schedule
+        // Note: rewardHalvingTimestamp is intentionally preserved from V1 to maintain reward decrease cadence
     }
 
     modifier onlyMigrator() {
@@ -211,7 +209,8 @@ contract MOVINEarn is
         UserActivity storage activity = userActivities[user];
         activity.dailySteps = steps;
         activity.dailyMets = mets;
-        activity.lastMidnightReset = lastReset;
+        activity.lastDayOfYearReset = ((lastReset / 86400) % 365) + 1;
+        activity.lastUpdated = lastReset;
     }
 
     function importRewardData(
@@ -268,10 +267,10 @@ contract MOVINEarn is
         view
         returns (uint256 steps, uint256 mets)
     {
-        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
+        uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1; // Calculate day of year (1-365)
         UserActivity memory activity = userActivities[msg.sender];
 
-        if (activity.lastMidnightReset < currentMidnight) {
+        if (activity.lastDayOfYearReset != currentDayOfYear) {
             return (0, 0);
         }
 
@@ -347,18 +346,11 @@ contract MOVINEarn is
         }
 
         userStakes[msg.sender][stakeIndex].lastClaimed = block.timestamp;
-        uint256 burnAmount = (reward * REWARDS_BURN_FEES_PERCENT) / 100;
-        uint256 userReward = reward - burnAmount;
 
-        erc20MovinToken.transfer(msg.sender, userReward);
-        movinToken.burn(burnAmount);
+        // Transfer full reward to user (no burn)
+        erc20MovinToken.transfer(msg.sender, reward);
 
-        emit StakingRewardsClaimed(
-            msg.sender,
-            stakeIndex,
-            userReward,
-            burnAmount
-        );
+        emit StakingRewardsClaimed(msg.sender, stakeIndex, reward);
     }
 
     /**
@@ -390,14 +382,6 @@ contract MOVINEarn is
         if (!hasRewards || totalReward == 0 || totalReward < 0.001 ether)
             revert NoRewardsAvailable();
 
-        // Check if contract has enough balance
-        if (movinToken.balanceOf(address(this)) < totalReward) {
-            revert InsufficientBalance(
-                movinToken.balanceOf(address(this)),
-                totalReward
-            );
-        }
-
         // Store the current timestamp once to ensure consistency
         uint256 currentTimestamp = block.timestamp;
 
@@ -406,23 +390,11 @@ contract MOVINEarn is
             userStakes[msg.sender][i].lastClaimed = currentTimestamp;
         }
 
-        // Calculate burn amount and user reward
-        uint256 burnAmount = (totalReward * REWARDS_BURN_FEES_PERCENT) / 100;
-        uint256 userReward = totalReward - burnAmount;
-
-        // Transfer tokens to user
-        erc20MovinToken.transfer(msg.sender, userReward);
-
-        // Burn specified amount
-        movinToken.burn(burnAmount);
+        // Mint full amount to user (no burn)
+        movinToken.mint(msg.sender, totalReward);
 
         // Emit event
-        emit AllStakingRewardsClaimed(
-            msg.sender,
-            userReward,
-            burnAmount,
-            stakeCount
-        );
+        emit AllStakingRewardsClaimed(msg.sender, totalReward, stakeCount);
     }
 
     function unstake(
@@ -442,7 +414,7 @@ contract MOVINEarn is
         }
 
         _removeStake(msg.sender, stakeIndex);
-        uint256 burnAmount = (stake.amount * REWARDS_BURN_FEES_PERCENT) / 100;
+        uint256 burnAmount = (stake.amount * UNSTAKE_BURN_FEES_PERCENT) / 100;
         uint256 userPayout = stake.amount - burnAmount;
         erc20MovinToken.transfer(msg.sender, userPayout);
         movinToken.burn(burnAmount);
@@ -495,47 +467,65 @@ contract MOVINEarn is
             revert InvalidActivityInput();
         }
 
-        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
-        uint256 currentHour = (block.timestamp / 3600) * 3600;
+        // Skip validation completely if both inputs are zero
+        // This allows referral registration to work properly
+        if (newSteps == 0 && newMets == 0) {
+            return;
+        }
+
+        uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1; // Calculate day of year (1-365)
         UserActivity storage activity = userActivities[msg.sender];
 
-        // Check if we need to reset for the new day
-        if (activity.lastMidnightReset < currentMidnight) {
+        // First-time activity recording
+        bool isFirstActivity = activity.lastUpdated == 0;
+
+        // Calculate elapsed minutes (rounded down) since last update
+        uint256 elapsedMinutes = isFirstActivity
+            ? 0
+            : (block.timestamp - activity.lastUpdated) / 60;
+
+        // Check time-based limits for physically possible activity
+        if (!isFirstActivity && elapsedMinutes > 0) {
+            // Calculate maximum possible steps in the elapsed time
+            uint256 maxPossibleSteps = elapsedMinutes * MAX_STEPS_PER_MINUTE;
+            uint256 maxPossibleMets = elapsedMinutes * MAX_METS_PER_MINUTE;
+
+            // Simpler validation that prevents underflow errors
+            if (newSteps > maxPossibleSteps || newMets > maxPossibleMets) {
+                revert InvalidActivityInput();
+            }
+        } else if (
+            !isFirstActivity &&
+            elapsedMinutes == 0 &&
+            (newSteps > 0 || newMets > 0)
+        ) {
+            // Prevent activity recording too frequently (must wait at least 1 minute)
+            revert InvalidActivityInput();
+        }
+
+        // Update last activity timestamp
+        activity.lastUpdated = block.timestamp;
+
+        // Check if we need to reset for the new day (day of year changed)
+        if (activity.lastDayOfYearReset != currentDayOfYear) {
             activity.dailySteps = 0;
             activity.dailyMets = 0;
         }
 
-        // Check if we need to reset for the new hour
-        if (activity.lastHourlyReset < currentHour) {
-            activity.hourlySteps = 0;
-            activity.hourlyMets = 0;
-            activity.lastHourlyReset = currentHour;
-        }
-
-        // Check hourly limits
-        if (activity.hourlySteps + newSteps > MAX_HOURLY_STEPS) {
-            revert InvalidActivityInput();
-        }
-
-        if (activity.hourlyMets + newMets > MAX_HOURLY_METS) {
-            revert InvalidActivityInput();
-        }
-
-        activity.lastMidnightReset = currentMidnight;
+        activity.lastDayOfYearReset = currentDayOfYear;
 
         // Update activity data
         activity.dailySteps += newSteps;
-        activity.hourlySteps += newSteps;
 
         // Only update mets for premium users
         if (activity.isPremium) {
             activity.dailyMets += newMets;
-            activity.hourlyMets += newMets;
         }
 
         _checkDailyDecrease();
 
         uint256 stepsReward = 0;
+
         if (activity.dailySteps >= STEPS_THRESHOLD) {
             stepsReward =
                 (activity.dailySteps / STEPS_THRESHOLD) *
@@ -609,9 +599,6 @@ contract MOVINEarn is
             // Reset daily activity counts after claiming
             activity.dailySteps = 0;
             activity.dailyMets = 0;
-            // Reset hourly activity counts
-            activity.hourlySteps = 0;
-            activity.hourlyMets = 0;
 
             revert RewardsExpired();
         }
@@ -635,13 +622,9 @@ contract MOVINEarn is
         // Reset daily activity counts after claiming
         activity.dailySteps = 0;
         activity.dailyMets = 0;
-        // Reset hourly activity counts
-        activity.hourlySteps = 0;
-        activity.hourlyMets = 0;
 
-        // Calculate burn and referral bonuses
-        uint256 burnAmount = (totalReward * REWARDS_BURN_FEES_PERCENT) / 100;
-        uint256 reward = totalReward - burnAmount;
+        // Calculate referral bonus (no burn)
+        uint256 reward = totalReward;
 
         // Check if the user has a referrer
         address referrer = userReferrals[msg.sender].referrer;
@@ -656,7 +639,7 @@ contract MOVINEarn is
 
             // Send referral bonus to referrer
             if (referralBonus > 0) {
-                erc20MovinToken.transfer(referrer, referralBonus);
+                movinToken.mint(referrer, referralBonus);
 
                 // Update referrer's earned bonus
                 userReferrals[referrer].earnedBonus += referralBonus;
@@ -667,10 +650,7 @@ contract MOVINEarn is
         }
 
         // Send tokens to user
-        erc20MovinToken.transfer(msg.sender, reward);
-
-        // Burn the burn amount
-        movinToken.burn(burnAmount);
+        movinToken.mint(msg.sender, reward);
 
         emit RewardsClaimed(
             msg.sender,
@@ -683,6 +663,15 @@ contract MOVINEarn is
     function setPremiumStatus(address user, bool status) external onlyOwner {
         userActivities[user].isPremium = status;
         emit PremiumStatusChanged(user, status);
+    }
+
+    /**
+     * @dev Mints MovinTokens to the specified address
+     * Used in test scripts since the owner of MovinToken is now the MOVINEarnV2 contract
+     */
+    function mintToken(address to, uint256 amount) external onlyOwner {
+        movinToken.mint(to, amount);
+        emit Minted(to, amount);
     }
 
     // Owner function to update lock period multipliers
@@ -783,6 +772,23 @@ contract MOVINEarn is
 
         // Verify and migrate activity data
         UserActivity storage activity = userActivities[user];
+
+        // Initialize lastUpdated to current timestamp if not set (crucial for V2)
+        if (activity.lastUpdated == 0) {
+            // In V1, we used lastMidnightReset and lastHourlyReset
+            // Set lastUpdated to block.timestamp for new structure
+            activity.lastUpdated = block.timestamp;
+        }
+
+        // Convert from midnight-based reset to day-of-year reset
+        uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
+
+        // If we have no lastDayOfYearReset set, initialize it using the current day of year
+        if (activity.lastDayOfYearReset == 0) {
+            activity.lastDayOfYearReset = currentDayOfYear;
+        }
+
+        // Fix missing reward accumulation timestamp
         if (
             activity.lastRewardAccumulationTime == 0 &&
             (activity.pendingStepsRewards > 0 ||
@@ -793,12 +799,12 @@ contract MOVINEarn is
         }
 
         // Reset daily activity if it's from a previous day
-        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
-        if (activity.lastMidnightReset < currentMidnight) {
+        if (activity.lastDayOfYearReset != currentDayOfYear) {
             activity.dailySteps = 0;
             activity.dailyMets = 0;
-            activity.lastMidnightReset = currentMidnight;
+            activity.lastDayOfYearReset = currentDayOfYear;
         }
+
         activityMigrated = true;
 
         // Migrate referral data
@@ -820,5 +826,44 @@ contract MOVINEarn is
             emit UserDataMigrated(user, false);
             revert("Migration failed");
         }
+    }
+
+    // V2: Owner function to verify reward rate consistency (can be called post-upgrade if needed)
+    function verifyRewardRates()
+        external
+        view
+        onlyOwner
+        returns (uint256, uint256, uint256)
+    {
+        // Return current values for verification without changing them
+        return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
+    }
+
+    // V2: Special function to help migrate activity data from V1 to V2 format
+    function migrateUserActivity(address user) external onlyOwner {
+        UserActivity storage activity = userActivities[user];
+
+        // Initialize lastUpdated if not set (crucial for recordActivity validation)
+        if (activity.lastUpdated == 0) {
+            // Set to current timestamp
+            activity.lastUpdated = block.timestamp;
+        }
+
+        // Set current day of year if not set
+        uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
+        if (activity.lastDayOfYearReset == 0) {
+            activity.lastDayOfYearReset = currentDayOfYear;
+        }
+
+        // Ensure we have a valid lastRewardAccumulationTime if there are pending rewards
+        if (
+            activity.lastRewardAccumulationTime == 0 &&
+            (activity.pendingStepsRewards > 0 ||
+                activity.pendingMetsRewards > 0)
+        ) {
+            activity.lastRewardAccumulationTime = block.timestamp;
+        }
+
+        emit UserDataMigrated(user, true);
     }
 }

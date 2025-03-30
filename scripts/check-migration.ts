@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { FunctionFragment } from "ethers";
-import { MOVIN_EARN_PROXY_ADDRESS, USER_ADDRESS } from "./contract-addresses";
+import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS, USER_ADDRESS } from "./contract-addresses";
 import { upgrades } from "hardhat";
 
 
@@ -14,6 +14,12 @@ async function main() {
     // Check if we can access the user
     const isPremium = await movinEarnV2.getIsPremiumUser(USER_ADDRESS);
     console.log(`User premium status: ${isPremium}`);
+
+    // Check the latest balance of the V2 contract
+    const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+    const contractAddress = await movinEarnV2.getAddress();
+    const balance = await movinToken.balanceOf(contractAddress);
+    console.log(`Contract balance: ${ethers.formatEther(balance)} MOVIN`);
     
     // Check for V2-specific data structures
     try {

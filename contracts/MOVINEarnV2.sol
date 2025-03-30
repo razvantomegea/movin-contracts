@@ -527,14 +527,14 @@ contract MOVINEarnV2 is
         uint256 stepsReward = 0;
         if (activity.dailySteps >= STEPS_THRESHOLD) {
             stepsReward =
-                (activity.dailySteps / STEPS_THRESHOLD) *
-                baseStepsRate;
+                (activity.dailySteps * baseStepsRate) /
+                STEPS_THRESHOLD;
             activity.pendingStepsRewards = stepsReward;
         }
 
         uint256 metsReward = 0;
         if (activity.isPremium && activity.dailyMets >= METS_THRESHOLD) {
-            metsReward = (activity.dailyMets / METS_THRESHOLD) * baseMetsRate;
+            metsReward = (activity.dailyMets * baseMetsRate) / METS_THRESHOLD;
             activity.pendingMetsRewards = metsReward;
         }
 
