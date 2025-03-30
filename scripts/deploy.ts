@@ -45,10 +45,26 @@ async function main() {
       console.log(`❌ Failed to fund MOVINEarn: ${error.message}`);
     }
 
+    // Initialize the migrator role (V2 feature)
+    console.log("\n4. Setting up migrator role...");
+    try {
+      await movinEarn.initializeMigration(deployer.address);
+      console.log(`✅ Set deployer as migrator: ${deployer.address}`);
+    } catch (error: any) {
+      console.log(`❌ Failed to set migrator role: ${error.message}`);
+    }
+
     // Verify deployment details
     console.log("\n=== DEPLOYMENT SUMMARY ===");
     console.log(`✅ MovinToken (Proxy): ${movinTokenAddress}`);
     console.log(`✅ MOVINEarn (Proxy): ${movinEarnAddress}`);
+    console.log("\nFeatures enabled:");
+    console.log("- Staking with multiple lock periods (1, 3, 6, 12, 24 months)");
+    console.log("- Daily activity tracking (steps and METs)");
+    console.log("- Premium user status for METs rewards");
+    console.log("- Referral system with 1% bonus");
+    console.log("- Daily reward rate decrease (0.1% daily)");
+    console.log("- Migration functionality for data integrity");
     console.log("\nStore these addresses for later interaction and upgrades!");
   } catch (error: any) {
     console.log(`❌ Deployment failed: ${error.message}`);

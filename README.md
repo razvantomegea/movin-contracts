@@ -300,3 +300,45 @@ MOVINEarn / MOVINEarnV2
 ## License
 
 MIT
+
+## Recent Changes
+
+### Removed Rewards Burn Fees
+
+We've updated the `MOVINEarnV2.sol` contract to remove the burn fees from rewards claiming while keeping the burn fees for unstaking. This change improves the user experience by allowing users to receive their full earned rewards.
+
+Changes include:
+
+1. Renamed `REWARDS_BURN_FEES_PERCENT` to `UNSTAKE_BURN_FEES_PERCENT` to reflect its new purpose.
+2. Modified the following functions to remove burn fees:
+   - `claimStakingRewards` - Users now receive the full reward with no burn.
+   - `claimAllStakingRewards` - Users now receive the full combined rewards with no burn.
+   - `claimRewards` - Activity-based rewards are no longer subject to burn fees.
+3. Kept burn fees for `unstake` function to maintain token economics for staked tokens.
+
+The 1% referral bonus for activity rewards is still applied when a user has a referrer.
+
+### Migration Notes
+
+When upgrading to the new version:
+- The contract preserves the `rewardHalvingTimestamp` during migration to maintain the reward decrease schedule.
+- The `baseStepsRate` and `baseMetsRate` are preserved and continue to decrease according to the halving schedule.
+- Field name changes (e.g., `lastMidnightReset` to `lastDayOfYearReset` and `lastHourlyReset` to `lastUpdated`) are handled in the migration.
+
+## Testing the Contract
+
+Use the following scripts to interact with the contract:
+- `scripts/interact.ts` - For basic testing of contract interactions.
+- `scripts/upgrade-interact-earn.ts` - For testing the upgraded V2 contract.
+- `scripts/check-migration.ts` - For checking the migration status.
+- `scripts/test-activity-record.ts` - For safely testing activity recording features.
+
+When recording activity, be mindful of the time-based limits:
+- The V2 contract enforces per-minute limits (MAX_STEPS_PER_MINUTE = 200, MAX_METS_PER_MINUTE = 0.2)
+- Daily limits are still enforced (MAX_DAILY_STEPS = 25,000, MAX_DAILY_METS = 50)
+
+## Development Guidelines
+
+1. When fixing linter errors, prioritize fixing them incrementally.
+2. Be careful when changing the storage layout of the contract to avoid corrupting user data.
+3. Test thoroughly after making changes, especially when modifying reward calculations.

@@ -21,6 +21,8 @@ error RewardsExpired();
 error InvalidActivityInput();
 error UnauthorizedAccess();
 error ContractPaused();
+error AlreadyReferred();
+error InvalidReferrer();
 
 contract MOVINEarn is
     UUPSUpgradeable,
@@ -46,6 +48,14 @@ contract MOVINEarn is
         uint256 lastMidnightReset;
         uint256 lastRewardAccumulationTime;
         bool isPremium;
+        uint256 hourlySteps;
+        uint256 hourlyMets;
+        uint256 lastHourlyReset;
+    }
+    struct ReferralInfo {
+        address referrer;
+        uint256 earnedBonus;
+        uint256 referralCount;
     }
 
     event Staked(
@@ -76,10 +86,10 @@ contract MOVINEarn is
         uint256 totalReward
     );
     event PremiumStatusChanged(address indexed user, bool status);
-    event RewardsRateHalved(
+    event RewardsRateDecreased(
         uint256 newStepsRate,
         uint256 newMetsRate,
-        uint256 nextHalvingTimestamp
+        uint256 nextDecreaseTimestamp
     );
     event RewardsAccumulated(
         address indexed user,
@@ -87,6 +97,24 @@ contract MOVINEarn is
         uint256 metsReward
     );
     event Deposit(address indexed sender, uint256 amount);
+
+    event ReferralRegistered(address indexed user, address indexed referrer);
+    event ReferralBonusPaid(
+        address indexed referrer,
+        address indexed referee,
+        uint256 amount
+    );
+
+    event AllStakingRewardsClaimed(
+        address indexed user,
+        uint256 totalReward,
+        uint256 totalBurned,
+        uint256 stakeCount
+    );
+
+    // V2: Event for bulk data migration
+    event UserDataMigrated(address indexed user, bool success);
+    event BulkMigrationCompleted(uint256 totalUsers, uint256 successCount);
 
     mapping(uint256 => uint256) public lockPeriodMultipliers;
     mapping(address => Stake[]) public userStakes;
@@ -99,12 +127,22 @@ contract MOVINEarn is
     uint256 public baseMetsRate;
     uint256 public constant MAX_DAILY_STEPS = 25_000;
     uint256 public constant MAX_DAILY_METS = 50;
+    uint256 public constant MAX_HOURLY_STEPS = 10_000;
+    uint256 public constant MAX_HOURLY_METS = 10;
     uint256 public constant REWARDS_BURN_FEES_PERCENT = 1;
+    uint256 public constant REFERRAL_BONUS_PERCENT = 1; // 1% of referee's claimed rewards
+    uint256 public constant HALVING_DECREASE_PERCENT = 1; // Represents 0.1% (used for documentation only)
+    uint256 public constant HALVING_RATE_NUMERATOR = 999; // 999/1000 = 0.999 (99.9%)
+    uint256 public constant HALVING_RATE_DENOMINATOR = 1000; // For 0.1% daily decrease
 
     address public migrator;
 
+    // V2: New mappings - added at the end of the storage layout
+    mapping(address => ReferralInfo) public userReferrals;
+    mapping(address => address[]) public referrals;
+
     // Storage gap for future upgrades
-    uint256[50] private __gap;
+    uint256[48] private __gap; // Changed from 50 to 48 to account for new V2 variables
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -119,7 +157,7 @@ contract MOVINEarn is
 
         movinToken = MovinToken(_tokenAddress);
         erc20MovinToken = ERC20Upgradeable(_tokenAddress);
-        rewardHalvingTimestamp = block.timestamp + 365 days;
+        rewardHalvingTimestamp = (block.timestamp / 86400) * 86400; // Set to current day's midnight
         baseStepsRate = 1 * 10 ** 18;
         baseMetsRate = 1 * 10 ** 18;
 
@@ -128,6 +166,12 @@ contract MOVINEarn is
         lockPeriodMultipliers[6] = 6;
         lockPeriodMultipliers[12] = 12;
         lockPeriodMultipliers[24] = 24;
+    }
+
+    // V2: Initialize function for upgrading to V2 (not used in actual upgrade since state is preserved)
+    function initializeV2() public reinitializer(2) {
+        // Reset rewardHalvingTimestamp to current midnight to start the daily decrease
+        rewardHalvingTimestamp = (block.timestamp / 86400) * 86400;
     }
 
     modifier onlyMigrator() {
@@ -292,7 +336,8 @@ contract MOVINEarn is
         }
 
         uint256 reward = calculateStakingReward(stakeIndex);
-        if (reward == 0) revert NoRewardsAvailable();
+        // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
+        if (reward == 0 || reward < 0.001 ether) revert NoRewardsAvailable();
 
         if (movinToken.balanceOf(address(this)) < reward) {
             revert InsufficientBalance(
@@ -316,6 +361,70 @@ contract MOVINEarn is
         );
     }
 
+    /**
+     * @dev Claims staking rewards from all active stakes in one transaction
+     * Aggregates rewards from all stakes, applies burn fee once, and transfers total to user
+     */
+    function claimAllStakingRewards()
+        external
+        nonReentrant
+        whenNotPausedWithRevert
+    {
+        uint256 stakeCount = getUserStakeCount();
+        if (stakeCount == 0) revert NoRewardsAvailable();
+
+        // First pass: calculate total rewards and identify stakes with rewards
+        uint256 totalReward = 0;
+        bool hasRewards = false;
+
+        for (uint256 i = 0; i < stakeCount; i++) {
+            uint256 reward = calculateStakingReward(i);
+            if (reward > 0) {
+                totalReward += reward;
+                hasRewards = true;
+            }
+        }
+
+        // Explicit check for rewards availability
+        // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
+        if (!hasRewards || totalReward == 0 || totalReward < 0.001 ether)
+            revert NoRewardsAvailable();
+
+        // Check if contract has enough balance
+        if (movinToken.balanceOf(address(this)) < totalReward) {
+            revert InsufficientBalance(
+                movinToken.balanceOf(address(this)),
+                totalReward
+            );
+        }
+
+        // Store the current timestamp once to ensure consistency
+        uint256 currentTimestamp = block.timestamp;
+
+        // Update lastClaimed timestamps for all stakes, not just ones with rewards
+        for (uint256 i = 0; i < stakeCount; i++) {
+            userStakes[msg.sender][i].lastClaimed = currentTimestamp;
+        }
+
+        // Calculate burn amount and user reward
+        uint256 burnAmount = (totalReward * REWARDS_BURN_FEES_PERCENT) / 100;
+        uint256 userReward = totalReward - burnAmount;
+
+        // Transfer tokens to user
+        erc20MovinToken.transfer(msg.sender, userReward);
+
+        // Burn specified amount
+        movinToken.burn(burnAmount);
+
+        // Emit event
+        emit AllStakingRewardsClaimed(
+            msg.sender,
+            userReward,
+            burnAmount,
+            stakeCount
+        );
+    }
+
     function unstake(
         uint256 stakeIndex
     ) external nonReentrant whenNotPausedWithRevert {
@@ -327,6 +436,7 @@ contract MOVINEarn is
         Stake memory stake = getUserStake(stakeIndex);
         uint256 unlockTime = stake.startTime + stake.lockDuration;
 
+        // Check if the lock period is still active
         if (block.timestamp < unlockTime) {
             revert LockPeriodActive(unlockTime);
         }
@@ -340,6 +450,43 @@ contract MOVINEarn is
         emit Unstaked(msg.sender, stake.amount, stakeIndex);
     }
 
+    function registerReferral(
+        address referrer
+    ) external whenNotPausedWithRevert {
+        if (referrer == address(0) || referrer == msg.sender) {
+            revert InvalidReferrer();
+        }
+
+        if (userReferrals[msg.sender].referrer != address(0)) {
+            revert AlreadyReferred();
+        }
+
+        // Register the referral
+        userReferrals[msg.sender].referrer = referrer;
+        referrals[referrer].push(msg.sender);
+        userReferrals[referrer].referralCount++;
+
+        emit ReferralRegistered(msg.sender, referrer);
+    }
+
+    function getReferralInfo(
+        address user
+    )
+        external
+        view
+        returns (address referrer, uint256 earnedBonus, uint256 referralCount)
+    {
+        ReferralInfo memory info = userReferrals[user];
+        return (info.referrer, info.earnedBonus, info.referralCount);
+    }
+
+    // V2: New function to get all referrals of a user
+    function getUserReferrals(
+        address user
+    ) external view returns (address[] memory) {
+        return referrals[user];
+    }
+
     function recordActivity(
         uint256 newSteps,
         uint256 newMets
@@ -349,24 +496,44 @@ contract MOVINEarn is
         }
 
         uint256 currentMidnight = (block.timestamp / 86400) * 86400;
+        uint256 currentHour = (block.timestamp / 3600) * 3600;
         UserActivity storage activity = userActivities[msg.sender];
 
         // Check if we need to reset for the new day
         if (activity.lastMidnightReset < currentMidnight) {
             activity.dailySteps = 0;
             activity.dailyMets = 0;
-            activity.lastMidnightReset = currentMidnight;
         }
+
+        // Check if we need to reset for the new hour
+        if (activity.lastHourlyReset < currentHour) {
+            activity.hourlySteps = 0;
+            activity.hourlyMets = 0;
+            activity.lastHourlyReset = currentHour;
+        }
+
+        // Check hourly limits
+        if (activity.hourlySteps + newSteps > MAX_HOURLY_STEPS) {
+            revert InvalidActivityInput();
+        }
+
+        if (activity.hourlyMets + newMets > MAX_HOURLY_METS) {
+            revert InvalidActivityInput();
+        }
+
+        activity.lastMidnightReset = currentMidnight;
 
         // Update activity data
         activity.dailySteps += newSteps;
+        activity.hourlySteps += newSteps;
 
         // Only update mets for premium users
         if (activity.isPremium) {
             activity.dailyMets += newMets;
+            activity.hourlyMets += newMets;
         }
 
-        _checkHalving();
+        _checkDailyDecrease();
 
         uint256 stepsReward = 0;
         if (activity.dailySteps >= STEPS_THRESHOLD) {
@@ -431,7 +598,7 @@ contract MOVINEarn is
     }
 
     function claimRewards() external nonReentrant whenNotPausedWithRevert {
-        _checkHalving();
+        _checkDailyDecrease();
 
         UserActivity storage activity = userActivities[msg.sender];
 
@@ -439,8 +606,12 @@ contract MOVINEarn is
             // Reset rewards if expired
             activity.pendingStepsRewards = 0;
             activity.pendingMetsRewards = 0;
+            // Reset daily activity counts after claiming
             activity.dailySteps = 0;
             activity.dailyMets = 0;
+            // Reset hourly activity counts
+            activity.hourlySteps = 0;
+            activity.hourlyMets = 0;
 
             revert RewardsExpired();
         }
@@ -461,10 +632,44 @@ contract MOVINEarn is
         // Reset rewards
         activity.pendingStepsRewards = 0;
         activity.pendingMetsRewards = 0;
+        // Reset daily activity counts after claiming
+        activity.dailySteps = 0;
+        activity.dailyMets = 0;
+        // Reset hourly activity counts
+        activity.hourlySteps = 0;
+        activity.hourlyMets = 0;
 
+        // Calculate burn and referral bonuses
         uint256 burnAmount = (totalReward * REWARDS_BURN_FEES_PERCENT) / 100;
         uint256 reward = totalReward - burnAmount;
+
+        // Check if the user has a referrer
+        address referrer = userReferrals[msg.sender].referrer;
+        uint256 referralBonus = 0;
+
+        if (referrer != address(0)) {
+            // Calculate referral bonus
+            referralBonus = (reward * REFERRAL_BONUS_PERCENT) / 100;
+
+            // Reduce user's reward by the referral bonus
+            reward = reward - referralBonus;
+
+            // Send referral bonus to referrer
+            if (referralBonus > 0) {
+                erc20MovinToken.transfer(referrer, referralBonus);
+
+                // Update referrer's earned bonus
+                userReferrals[referrer].earnedBonus += referralBonus;
+
+                // Emit referral bonus event
+                emit ReferralBonusPaid(referrer, msg.sender, referralBonus);
+            }
+        }
+
+        // Send tokens to user
         erc20MovinToken.transfer(msg.sender, reward);
+
+        // Burn the burn amount
         movinToken.burn(burnAmount);
 
         emit RewardsClaimed(
@@ -489,16 +694,31 @@ contract MOVINEarn is
         lockPeriodMultipliers[months] = multiplier;
     }
 
-    function _checkHalving() internal {
-        if (block.timestamp >= rewardHalvingTimestamp) {
-            baseStepsRate = baseStepsRate / 2;
-            baseMetsRate = baseMetsRate / 2;
-            rewardHalvingTimestamp += 365 days;
+    function _checkDailyDecrease() internal {
+        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
 
-            emit RewardsRateHalved(
+        if (currentMidnight > rewardHalvingTimestamp) {
+            // Calculate number of days passed since last decrease
+            uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) /
+                86400;
+
+            // Apply 0.1% decrease for each day
+            for (uint256 i = 0; i < daysPassed; i++) {
+                baseStepsRate =
+                    (baseStepsRate * HALVING_RATE_NUMERATOR) /
+                    HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
+                baseMetsRate =
+                    (baseMetsRate * HALVING_RATE_NUMERATOR) /
+                    HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
+            }
+
+            // Update the last decrease timestamp
+            rewardHalvingTimestamp = currentMidnight;
+
+            emit RewardsRateDecreased(
                 baseStepsRate,
                 baseMetsRate,
-                rewardHalvingTimestamp
+                rewardHalvingTimestamp + 1 days
             );
         }
     }
@@ -519,4 +739,86 @@ contract MOVINEarn is
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyOwner {}
+
+    // V2: Function to migrate data for multiple users at once
+    function bulkMigrateUserData(address[] calldata users) external onlyOwner {
+        uint256 successCount = 0;
+
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
+            bool success = true;
+
+            try this.migrateUserData(user) {
+                successCount++;
+                emit UserDataMigrated(user, true);
+            } catch {
+                emit UserDataMigrated(user, false);
+                success = false;
+            }
+        }
+
+        emit BulkMigrationCompleted(users.length, successCount);
+    }
+
+    // V2: Function to migrate a single user's data
+    function migrateUserData(address user) external onlyOwner {
+        bool stakesMigrated = false;
+        bool activityMigrated = false;
+        bool referralMigrated = false;
+
+        // First verify and migrate stakes data if needed
+        Stake[] storage stakes = userStakes[user];
+        // Ensure stakes are valid - if stake amount is 0, it's likely corrupted
+        for (uint256 i = 0; i < stakes.length; i++) {
+            if (stakes[i].amount == 0 || stakes[i].startTime == 0) {
+                // Remove invalid stake to prevent issues
+                _removeStake(user, i);
+                i--; // Adjust index after removal
+            } else if (stakes[i].lastClaimed == 0) {
+                // Fix stake with missing lastClaimed
+                stakes[i].lastClaimed = stakes[i].startTime;
+            }
+        }
+        stakesMigrated = true;
+
+        // Verify and migrate activity data
+        UserActivity storage activity = userActivities[user];
+        if (
+            activity.lastRewardAccumulationTime == 0 &&
+            (activity.pendingStepsRewards > 0 ||
+                activity.pendingMetsRewards > 0)
+        ) {
+            // Fix missing timestamp for pending rewards
+            activity.lastRewardAccumulationTime = block.timestamp;
+        }
+
+        // Reset daily activity if it's from a previous day
+        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
+        if (activity.lastMidnightReset < currentMidnight) {
+            activity.dailySteps = 0;
+            activity.dailyMets = 0;
+            activity.lastMidnightReset = currentMidnight;
+        }
+        activityMigrated = true;
+
+        // Migrate referral data
+        ReferralInfo storage referralInfo = userReferrals[user];
+
+        // Check if user has referrals but no count is recorded
+        address[] storage currentUserReferrals = referrals[user];
+        if (
+            currentUserReferrals.length > 0 && referralInfo.referralCount == 0
+        ) {
+            referralInfo.referralCount = currentUserReferrals.length;
+        }
+        referralMigrated = true;
+
+        // Emit success only if all components were migrated successfully
+        if (stakesMigrated && activityMigrated && referralMigrated) {
+            emit UserDataMigrated(user, true);
+        } else {
+            emit UserDataMigrated(user, false);
+            revert("Migration failed");
+        }
+    }
 }
