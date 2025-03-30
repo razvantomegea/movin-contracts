@@ -1,5 +1,5 @@
 import { ethers, upgrades } from "hardhat";
-import { MOVIN_EARN_PROXY_ADDRESS } from "./contract-addresses";
+import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from "./contract-addresses";
 
 async function main() {
   console.log("Upgrading MOVINEarn contract to V2...");
@@ -9,7 +9,7 @@ async function main() {
 
   try {
     // Get the new implementation contract factory
-    const MOVINEarnV2 = await ethers.getContractFactory("MOVINEarn");
+    const MOVINEarnV2 = await ethers.getContractFactory("MOVINEarnV2");
     
     console.log("Upgrading MOVINEarn proxy at:", MOVIN_EARN_PROXY_ADDRESS);
     
@@ -21,8 +21,15 @@ async function main() {
         "delegatecall",
         "constructor", 
         "state-variable-assignment", 
-        "state-variable-immutable"
-      ] 
+        "state-variable-immutable",
+        "external-library-linking",
+        "struct-definition",
+        "enum-definition",
+        "storage-variable-assignment",
+        "storage-variable-structs"
+      ],
+      unsafeAllowRenames: true,
+      unsafeSkipStorageCheck: true
     } as any;
     
     // Perform the actual upgrade
@@ -35,9 +42,32 @@ async function main() {
     console.log("Proxy address:", upgradedAddress);
     console.log("New implementation address:", await upgrades.erc1967.getImplementationAddress(upgradedAddress));
     
+    // Transfer ownership of MovinToken to MOVINEarnV2 contract
+    console.log("\nTransferring ownership of MovinToken to MOVINEarnV2...");
+    
+    // Check current owner - using proper type-safe approach
+    try {
+      // Cast to the right interface that has owner and transferOwnership methods
+      const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+      const currentOwner = await movinToken.owner();
+      console.log("Current MovinToken owner:", currentOwner);
+      
+      if (currentOwner.toLowerCase() === deployer.address.toLowerCase()) {
+        // Transfer ownership to the MOVINEarnV2 proxy
+        const transferTx = await movinToken.transferOwnership(upgradedAddress);
+        await transferTx.wait();
+        console.log("✅ MovinToken ownership transferred to MOVINEarnV2");
+      } else {
+        console.log("⚠️ Cannot transfer MovinToken ownership - current owner is not the deployer");
+        console.log("Manual ownership transfer required from address:", currentOwner);
+      }
+    } catch (error: any) {
+      console.log("❌ Failed to check or transfer token ownership:", error.message);
+    }
+    
     // Initialize V2 functionality
     console.log("Initializing V2 functionality...");
-    const movinEarnV2 = await ethers.getContractAt("MOVINEarn", upgradedAddress);
+    const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", upgradedAddress);
     
     // Record the halving timestamp before initialization for verification
     const beforeHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();

@@ -108,6 +108,8 @@ contract MOVINEarnV2 is
         uint256 stakeCount
     );
 
+    event Minted(address indexed user, uint256 amount);
+
     // V2: Event for bulk data migration
     event UserDataMigrated(address indexed user, bool success);
     event BulkMigrationCompleted(uint256 totalUsers, uint256 successCount);
@@ -207,7 +209,8 @@ contract MOVINEarnV2 is
         UserActivity storage activity = userActivities[user];
         activity.dailySteps = steps;
         activity.dailyMets = mets;
-        activity.lastDayOfYearReset = lastReset;
+        activity.lastDayOfYearReset = ((lastReset / 86400) % 365) + 1;
+        activity.lastUpdated = lastReset;
     }
 
     function importRewardData(
@@ -379,14 +382,6 @@ contract MOVINEarnV2 is
         if (!hasRewards || totalReward == 0 || totalReward < 0.001 ether)
             revert NoRewardsAvailable();
 
-        // Check if contract has enough balance
-        if (movinToken.balanceOf(address(this)) < totalReward) {
-            revert InsufficientBalance(
-                movinToken.balanceOf(address(this)),
-                totalReward
-            );
-        }
-
         // Store the current timestamp once to ensure consistency
         uint256 currentTimestamp = block.timestamp;
 
@@ -395,8 +390,8 @@ contract MOVINEarnV2 is
             userStakes[msg.sender][i].lastClaimed = currentTimestamp;
         }
 
-        // Transfer full amount to user (no burn)
-        erc20MovinToken.transfer(msg.sender, totalReward);
+        // Mint full amount to user (no burn)
+        movinToken.mint(msg.sender, totalReward);
 
         // Emit event
         emit AllStakingRewardsClaimed(msg.sender, totalReward, stakeCount);
@@ -470,6 +465,12 @@ contract MOVINEarnV2 is
     ) external whenNotPausedWithRevert {
         if (newSteps > MAX_DAILY_STEPS || newMets > MAX_DAILY_METS) {
             revert InvalidActivityInput();
+        }
+
+        // Skip validation completely if both inputs are zero
+        // This allows referral registration to work properly
+        if (newSteps == 0 && newMets == 0) {
+            return;
         }
 
         uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1; // Calculate day of year (1-365)
@@ -637,7 +638,7 @@ contract MOVINEarnV2 is
 
             // Send referral bonus to referrer
             if (referralBonus > 0) {
-                erc20MovinToken.transfer(referrer, referralBonus);
+                movinToken.mint(referrer, referralBonus);
 
                 // Update referrer's earned bonus
                 userReferrals[referrer].earnedBonus += referralBonus;
@@ -648,7 +649,7 @@ contract MOVINEarnV2 is
         }
 
         // Send tokens to user
-        erc20MovinToken.transfer(msg.sender, reward);
+        movinToken.mint(msg.sender, reward);
 
         emit RewardsClaimed(
             msg.sender,
@@ -661,6 +662,15 @@ contract MOVINEarnV2 is
     function setPremiumStatus(address user, bool status) external onlyOwner {
         userActivities[user].isPremium = status;
         emit PremiumStatusChanged(user, status);
+    }
+
+    /**
+     * @dev Mints MovinTokens to the specified address
+     * Used in test scripts since the owner of MovinToken is now the MOVINEarnV2 contract
+     */
+    function mintToken(address to, uint256 amount) external onlyOwner {
+        movinToken.mint(to, amount);
+        emit Minted(to, amount);
     }
 
     // Owner function to update lock period multipliers
@@ -764,17 +774,15 @@ contract MOVINEarnV2 is
 
         // Initialize lastUpdated to current timestamp if not set (crucial for V2)
         if (activity.lastUpdated == 0) {
+            // In V1, we used lastMidnightReset and lastHourlyReset
+            // Set lastUpdated to block.timestamp for new structure
             activity.lastUpdated = block.timestamp;
         }
 
         // Convert from midnight-based reset to day-of-year reset
         uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
 
-        // Always update lastUpdated to current block timestamp for proper synchronization
-        activity.lastUpdated = block.timestamp;
-
-        // If we have a lastMidnightReset value but no lastDayOfYearReset,
-        // set the lastDayOfYearReset to the current day of year
+        // If we have no lastDayOfYearReset set, initialize it using the current day of year
         if (activity.lastDayOfYearReset == 0) {
             activity.lastDayOfYearReset = currentDayOfYear;
         }
@@ -828,5 +836,33 @@ contract MOVINEarnV2 is
     {
         // Return current values for verification without changing them
         return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
+    }
+
+    // V2: Special function to help migrate activity data from V1 to V2 format
+    function migrateUserActivity(address user) external onlyOwner {
+        UserActivity storage activity = userActivities[user];
+
+        // Initialize lastUpdated if not set (crucial for recordActivity validation)
+        if (activity.lastUpdated == 0) {
+            // Set to current timestamp
+            activity.lastUpdated = block.timestamp;
+        }
+
+        // Set current day of year if not set
+        uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
+        if (activity.lastDayOfYearReset == 0) {
+            activity.lastDayOfYearReset = currentDayOfYear;
+        }
+
+        // Ensure we have a valid lastRewardAccumulationTime if there are pending rewards
+        if (
+            activity.lastRewardAccumulationTime == 0 &&
+            (activity.pendingStepsRewards > 0 ||
+                activity.pendingMetsRewards > 0)
+        ) {
+            activity.lastRewardAccumulationTime = block.timestamp;
+        }
+
+        emit UserDataMigrated(user, true);
     }
 }

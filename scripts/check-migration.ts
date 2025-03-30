@@ -69,17 +69,13 @@ async function main() {
       console.log(`  Pending steps rewards: ${ethers.formatEther(activity.pendingStepsRewards)} MOVIN`);
       console.log(`  Pending METs rewards: ${ethers.formatEther(activity.pendingMetsRewards)} MOVIN`);
       
-      // Handle both old and new field names
+      // Handle field name changes between V1 and V2
       if (activity.lastDayOfYearReset) {
         console.log(`  Last day of year reset: ${activity.lastDayOfYearReset} (day of year)`);
-      } else if (activity.lastMidnightReset) {
-        console.log(`  Last midnight reset: ${activity.lastMidnightReset} (timestamp)`);
-      }
+      } 
       
       if (activity.lastUpdated) {
         console.log(`  Last updated: ${new Date(Number(activity.lastUpdated) * 1000).toISOString()}`);
-      } else if (activity.lastHourlyReset) {
-        console.log(`  Last hourly reset: ${new Date(Number(activity.lastHourlyReset) * 1000).toISOString()}`);
       }
       
       if (activity.lastRewardAccumulationTime) {

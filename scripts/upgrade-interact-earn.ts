@@ -1,6 +1,6 @@
 import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from "./contract-addresses";
-import { ethers, upgrades } from "hardhat";
+import { ethers } from "hardhat";
 
 // Custom parameters for migration testing
 const SETUP_TEST_DATA = true; // Set to true to create test data before migration
@@ -26,11 +26,29 @@ async function main() {
   console.log("Connecting to MOVINEarn contract at", MOVIN_EARN_PROXY_ADDRESS);
   const movinEarn = await ethers.getContractAt("MOVINEarn", MOVIN_EARN_PROXY_ADDRESS);
   const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+  
+  // Verify contract interfaces
+  console.log("Checking contract interfaces...");
+  try {
+    const totalSupply = await movinToken.totalSupply();
+    console.log("✅ MovinToken total supply:", ethers.formatEther(totalSupply));
+    
+    // Check if movinEarnV2 has the mintToken function
+    const hasFunction = MOVINEarnV2.interface.hasFunction("mintToken");
+    console.log(`✅ MOVINEarnV2 has mintToken function: ${hasFunction}`);
+    
+    // Try to get owner of the contract
+    const contractOwner = await movinEarnV2.owner();
+    console.log(`✅ MOVINEarnV2 owner: ${contractOwner}`);
+    console.log(`✅ Current signer is owner: ${contractOwner === owner.address}`);
+  } catch (error: any) {
+    console.error("❌ Error checking contract interfaces:", error.message);
+  }
 
   // Setup test data if needed (create activities and stakes)
   if (SETUP_TEST_DATA) {
     console.log("\n--- 🛠️ SETTING UP TEST DATA ---");
-    await setupTestData(movinEarn, movinToken, [user1, user2, user3], owner);
+    await setupTestData(movinEarnV2, movinToken, [user1, user2, user3], owner);
   }
 
   // Verify current state
@@ -66,7 +84,7 @@ async function main() {
 }
 
 async function setupTestData(
-  movinEarn: any, 
+  movinEarnV2: any, 
   movinToken: any, 
   users: any[], 
   owner: any
@@ -75,11 +93,11 @@ async function setupTestData(
     console.log("Minting MOVIN tokens to users...");
     for (const user of users) {
       const mintAmount = ethers.parseEther("10000");
-      await movinToken.connect(owner).mint(user.address, mintAmount);
+      await movinEarnV2.connect(owner).mintToken(user.address, mintAmount);
       console.log(`✅ Minted ${ethers.formatEther(mintAmount)} MOVIN to ${user.address}`);
       
       // Approve tokens for staking
-      await movinToken.connect(user).approve(movinEarn.getAddress(), mintAmount);
+      await movinToken.connect(user).approve(movinEarnV2.getAddress(), mintAmount);
       console.log(`✅ User ${user.address} approved ${ethers.formatEther(mintAmount)} tokens for staking`);
     }
     
@@ -88,7 +106,7 @@ async function setupTestData(
     const stakeDurations = [1, 3, 6]; // 1, 3, and 6 month durations
     
     for (const user of users) {
-      const userStakeCount = await movinEarn.connect(user).getUserStakeCount();
+      const userStakeCount = await movinEarnV2.connect(user).getUserStakeCount();
       console.log(`User ${user.address} already has ${userStakeCount} stakes`);
       
       // Only create stakes if user doesn't have any
@@ -97,7 +115,7 @@ async function setupTestData(
           const amount = ethers.parseEther(String(500 + i * 500)); // 500, 1000, 1500 tokens
           const duration = stakeDurations[i % stakeDurations.length];
           
-          await movinEarn.connect(user).stakeTokens(amount, duration);
+          await movinEarnV2.connect(user).stakeTokens(amount, duration);
           console.log(`✅ User ${user.address} staked ${ethers.formatEther(amount)} tokens for ${duration} month(s)`);
         }
       } else {
@@ -121,7 +139,7 @@ async function setupTestData(
           // Advance time by 5 minutes between recordings to ensure time-based limits are satisfied
           await time.increase(5 * 60); 
           
-          await movinEarn.connect(user).recordActivity(steps, mets);
+          await movinEarnV2.connect(user).recordActivity(steps, mets);
           console.log(`✅ User ${user.address} recorded activity: ${steps} steps, ${mets} METs`);
         } catch (error: any) {
           console.log(`❌ Failed to record activity for user ${user.address}: ${error.message}`);
@@ -130,7 +148,7 @@ async function setupTestData(
     }
     
     // Set premium status for one user
-    await movinEarn.connect(owner).setPremiumStatus(users[0].address, true);
+    await movinEarnV2.connect(owner).setPremiumStatus(users[0].address, true);
     console.log(`✅ Set premium status for user ${users[0].address}`);
     
     // Advance time to accumulate rewards
@@ -309,7 +327,14 @@ async function testReferrals(movinEarnV2: any, referrer: any, referee: any, movi
     
     console.log("\nTesting referral rewards bonus...");
     
-    // Record activity for referee that will generate rewards
+    // First, record zero activity to ensure lastUpdated is set without triggering validation
+    await movinEarnV2.connect(referee).recordActivity(0, 0);
+    console.log("✅ Recorded zero activity to initialize lastUpdated timestamp");
+    
+    // Advance time by 1 minute to ensure we pass the time-based validation
+    await time.increase(60);
+    
+    // Now record activity for referee that will generate rewards
     const stepsToRecord = 10000; // STEPS_THRESHOLD
     const metsToRecord = 10;    // METS_THRESHOLD
     await movinEarnV2.connect(referee).recordActivity(stepsToRecord, metsToRecord);
@@ -650,7 +675,7 @@ async function testClaimAllStakingRewards(
       // Mint tokens if needed
       const userBalance = await movinToken.balanceOf(user.address);
       if (userBalance < ethers.parseEther("5000")) {
-        await movinToken.connect(owner).mint(user.address, ethers.parseEther("10000"));
+        await movinEarnV2.connect(owner).mintToken(user.address, ethers.parseEther("10000"));
         console.log(`✅ Minted additional tokens to user`);
         
         // Approve tokens for staking

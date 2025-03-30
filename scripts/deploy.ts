@@ -66,6 +66,13 @@ async function main() {
     console.log("- Daily reward rate decrease (0.1% daily)");
     console.log("- Migration functionality for data integrity");
     console.log("\nStore these addresses for later interaction and upgrades!");
+
+    // Get proxy contract instances
+    const movinTokenProxy = await ethers.getContractAt("MovinToken", movinTokenAddress);
+    const movinEarnProxy = await ethers.getContractAt("MOVINEarnV2", movinEarnAddress);
+
+    // Transfer ownership
+    await movinTokenProxy.transferOwnership(movinEarnProxy);
   } catch (error: any) {
     console.log(`❌ Deployment failed: ${error.message}`);
     process.exitCode = 1;

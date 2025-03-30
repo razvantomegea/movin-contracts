@@ -37,7 +37,7 @@ describe("MOVINEarnV2", function () {
       { kind: "uups", initializer: "initialize" }
     ) as unknown as MovinToken;
     await movinToken.waitForDeployment();
-
+    
     // Deploy MOVINEarnV2
     const MOVINEarnV2 = await ethers.getContractFactory("MOVINEarnV2");
     movinEarn = await upgrades.deployProxy(
@@ -47,12 +47,14 @@ describe("MOVINEarnV2", function () {
     ) as unknown as MOVINEarnV2;
     await movinEarn.waitForDeployment();
 
-    // Mint some tokens to users for testing
-    await movinToken.mint(user1.address, ONE_THOUSAND_TOKENS);
-    await movinToken.mint(user2.address, ONE_THOUSAND_TOKENS);
+    const movinEarnAddress = await movinEarn.getAddress();
     
-    // Also mint tokens to the MOVINEarnV2 contract for rewards distribution
-    await movinToken.mint(await movinEarn.getAddress(), ethers.parseEther("100000"));
+    // Transfer ownership of the token to the MOVINEarnV2 contract
+    await movinToken.transferOwnership(movinEarnAddress);
+    // Mint some tokens to users for testing
+    await movinEarn.mintToken(user1.address, ONE_THOUSAND_TOKENS);
+    await movinEarn.mintToken(user2.address, ONE_THOUSAND_TOKENS);    
+    await movinEarn.mintToken(movinEarnAddress, ethers.parseEther("100000"));
   });
 
   describe("Initialization", function () {
@@ -185,7 +187,7 @@ describe("MOVINEarnV2", function () {
 
     it("Should allow claiming rewards from all stakes at once using claimAllStakingRewards", async function () {
       // Mint enough tokens for staking
-      await movinToken.mint(user1.address, ethers.parseEther("10000"));
+      await movinEarn.mintToken(user1.address, ethers.parseEther("10000"));
       
       // Create multiple stakes with different lock periods
       const stake1Amount = ethers.parseEther("1000");
