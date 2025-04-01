@@ -50,6 +50,12 @@ contract MOVINEarnV2 is
         bool isPremium;
         uint256 lastUpdated;
     }
+
+    struct ActivityRecord {
+        uint256 value;
+        uint256 timestamp;
+    }
+
     struct ReferralInfo {
         address referrer;
         uint256 earnedBonus;
@@ -117,6 +123,8 @@ contract MOVINEarnV2 is
     mapping(uint256 => uint256) public lockPeriodMultipliers;
     mapping(address => Stake[]) public userStakes;
     mapping(address => UserActivity) public userActivities;
+    mapping(address => ActivityRecord[]) public userStepsHistory;
+    mapping(address => ActivityRecord[]) public userMetsHistory;
 
     uint256 public constant STEPS_THRESHOLD = 10_000;
     uint256 public constant METS_THRESHOLD = 10;
@@ -155,7 +163,7 @@ contract MOVINEarnV2 is
 
         movinToken = MovinToken(_tokenAddress);
         erc20MovinToken = ERC20Upgradeable(_tokenAddress);
-        rewardHalvingTimestamp = (block.timestamp / 86400) * 86400; // Set to current day's midnight
+        rewardHalvingTimestamp = block.timestamp;
         baseStepsRate = 1 * 10 ** 18;
         baseMetsRate = 1 * 10 ** 18;
 
@@ -510,12 +518,26 @@ contract MOVINEarnV2 is
 
         activity.lastDayOfYearReset = currentDayOfYear;
 
-        // Update activity data
-        activity.dailySteps += newSteps;
+        // Update activity data and store historical records
+        if (newSteps > 0) {
+            activity.dailySteps += newSteps;
+            userStepsHistory[msg.sender].push(
+                ActivityRecord({
+                    value: activity.dailySteps,
+                    timestamp: block.timestamp
+                })
+            );
+        }
 
         // Only update mets for premium users
-        if (activity.isPremium) {
+        if (activity.isPremium && newMets > 0) {
             activity.dailyMets += newMets;
+            userMetsHistory[msg.sender].push(
+                ActivityRecord({
+                    value: activity.dailyMets,
+                    timestamp: block.timestamp
+                })
+            );
         }
 
         _checkDailyDecrease();
@@ -686,9 +708,9 @@ contract MOVINEarnV2 is
     }
 
     function _checkDailyDecrease() internal {
-        uint256 currentMidnight = (block.timestamp / 86400) * 86400;
+        uint256 currentMidnight = block.timestamp;
 
-        if (currentMidnight > rewardHalvingTimestamp) {
+        if (currentMidnight >= rewardHalvingTimestamp + 1 days) {
             // Calculate number of days passed since last decrease
             uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) /
                 86400;
@@ -867,5 +889,29 @@ contract MOVINEarnV2 is
         }
 
         emit UserDataMigrated(user, true);
+    }
+
+    function getUserStepsHistory(
+        address user
+    ) external view returns (ActivityRecord[] memory) {
+        return userStepsHistory[user];
+    }
+
+    function getUserMetsHistory(
+        address user
+    ) external view returns (ActivityRecord[] memory) {
+        return userMetsHistory[user];
+    }
+
+    function getUserStepsHistoryLength(
+        address user
+    ) external view returns (uint256) {
+        return userStepsHistory[user].length;
+    }
+
+    function getUserMetsHistoryLength(
+        address user
+    ) external view returns (uint256) {
+        return userMetsHistory[user].length;
     }
 }

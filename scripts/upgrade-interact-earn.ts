@@ -475,6 +475,21 @@ async function testActivitiesAndRewards(
     try {
       await movinEarnV2.connect(user1).recordActivity(steps1, mets1);
       console.log(`✅ User recorded ${steps1} steps and ${mets1} METs (safely within per-minute limit)`);
+      
+      // Verify activity history was recorded
+      const stepsHistory = await movinEarnV2.getUserStepsHistory(user1.address);
+      const metsHistory = await movinEarnV2.getUserMetsHistory(user1.address);
+      
+      console.log("\nActivity History Verification:");
+      console.log(`Steps history length: ${stepsHistory.length}`);
+      if (stepsHistory.length > 0) {
+        console.log(`Latest steps record: ${stepsHistory[stepsHistory.length - 1].value} at ${new Date(Number(stepsHistory[stepsHistory.length - 1].timestamp) * 1000).toISOString()}`);
+      }
+      
+      console.log(`METs history length: ${metsHistory.length}`);
+      if (metsHistory.length > 0) {
+        console.log(`Latest METs record: ${metsHistory[metsHistory.length - 1].value} at ${new Date(Number(metsHistory[metsHistory.length - 1].timestamp) * 1000).toISOString()}`);
+      }
     } catch (error: any) {
       console.log(`❌ Failed to record activity: ${error.message}`);
       console.log(`Trying with lower values...`);
@@ -484,6 +499,21 @@ async function testActivitiesAndRewards(
       const safeMets = 1; // Integer value for METs
       await movinEarnV2.connect(user1).recordActivity(safeSteps, safeMets);
       console.log(`✅ User recorded ${safeSteps} steps and ${safeMets} METs (very safe values)`);
+      
+      // Verify activity history was recorded
+      const stepsHistory = await movinEarnV2.getUserStepsHistory(user1.address);
+      const metsHistory = await movinEarnV2.getUserMetsHistory(user1.address);
+      
+      console.log("\nActivity History Verification:");
+      console.log(`Steps history length: ${stepsHistory.length}`);
+      if (stepsHistory.length > 0) {
+        console.log(`Latest steps record: ${stepsHistory[stepsHistory.length - 1].value} at ${new Date(Number(stepsHistory[stepsHistory.length - 1].timestamp) * 1000).toISOString()}`);
+      }
+      
+      console.log(`METs history length: ${metsHistory.length}`);
+      if (metsHistory.length > 0) {
+        console.log(`Latest METs record: ${metsHistory[metsHistory.length - 1].value} at ${new Date(Number(metsHistory[metsHistory.length - 1].timestamp) * 1000).toISOString()}`);
+      }
     }
     
     // Get user's last update timestamp for timing-based activity limits
@@ -533,6 +563,21 @@ async function testActivitiesAndRewards(
     try {
       await movinEarnV2.connect(user1).recordActivity(steps2, mets2);
       console.log(`✅ After 2 minutes, user was able to record ${steps2} steps and ${mets2} METs`);
+      
+      // Verify activity history was updated
+      const stepsHistory = await movinEarnV2.getUserStepsHistory(user1.address);
+      const metsHistory = await movinEarnV2.getUserMetsHistory(user1.address);
+      
+      console.log("\nUpdated Activity History Verification:");
+      console.log(`Steps history length: ${stepsHistory.length}`);
+      if (stepsHistory.length > 0) {
+        console.log(`Latest steps record: ${stepsHistory[stepsHistory.length - 1].value} at ${new Date(Number(stepsHistory[stepsHistory.length - 1].timestamp) * 1000).toISOString()}`);
+      }
+      
+      console.log(`METs history length: ${metsHistory.length}`);
+      if (metsHistory.length > 0) {
+        console.log(`Latest METs record: ${metsHistory[metsHistory.length - 1].value} at ${new Date(Number(metsHistory[metsHistory.length - 1].timestamp) * 1000).toISOString()}`);
+      }
     } catch (error: any) {
       console.log(`❌ Failed to record activity after time advance: ${error.message}`);
       
@@ -541,64 +586,21 @@ async function testActivitiesAndRewards(
       const saferMets = Math.floor(Number(MAX_METS_PER_MINUTE) * 1.2); // Only 60% of 2 minute limit
       await movinEarnV2.connect(user1).recordActivity(saferSteps, saferMets); 
       console.log(`✅ With safer values: recorded ${saferSteps} steps and ${saferMets} METs`);
-    }
-    
-    // Verify the lastUpdated field
-    console.log("\nVerifying lastUpdated and lastDayOfYearReset fields...");
-    try {
-      const activityData = await movinEarnV2.userActivities(user1.address);
-      // Try both field names to support both contract versions
-      const lastUpdateField = activityData.lastUpdated || activityData.lastHourlyReset;
-      const lastResetField = activityData.lastDayOfYearReset || activityData.lastMidnightReset;
       
-      if (lastUpdateField) {
-        console.log(`✅ Last update field is set to: ${new Date(Number(lastUpdateField) * 1000).toISOString()}`);
-        
-        // Get the current block timestamp
-        const latestBlock = await ethers.provider.getBlock("latest");
-        if (latestBlock) {
-          const blockTimestamp = latestBlock.timestamp;
-          const timeDiff = Math.abs(Number(lastUpdateField) - blockTimestamp);
-          console.log(`Current block timestamp: ${new Date(blockTimestamp * 1000).toISOString()}`);
-          console.log(`Difference: ${timeDiff} seconds`);
-          
-          if (timeDiff < 5) {
-            console.log("✅ Last update time is properly synchronized with current time");
-          } else {
-            console.log("⚠️ Last update time seems out of sync with current time");
-          }
-        }
-      } else {
-        console.log("❌ Last update field is not set");
+      // Verify activity history was updated
+      const stepsHistory = await movinEarnV2.getUserStepsHistory(user1.address);
+      const metsHistory = await movinEarnV2.getUserMetsHistory(user1.address);
+      
+      console.log("\nUpdated Activity History Verification:");
+      console.log(`Steps history length: ${stepsHistory.length}`);
+      if (stepsHistory.length > 0) {
+        console.log(`Latest steps record: ${stepsHistory[stepsHistory.length - 1].value} at ${new Date(Number(stepsHistory[stepsHistory.length - 1].timestamp) * 1000).toISOString()}`);
       }
       
-      if (lastResetField) {
-        const secondsInDay = 24 * 60 * 60;
-        const latestBlock = await ethers.provider.getBlock("latest");
-        const dayTimestamp = latestBlock ? latestBlock.timestamp : 0;
-        
-        // Handle both timestamp-based lastMidnightReset and day-of-year based lastDayOfYearReset
-        if (Number(lastResetField) > 366) {
-          // This is likely a timestamp (lastMidnightReset)
-          console.log(`✅ Last reset field is set to: ${new Date(Number(lastResetField) * 1000).toISOString()}`);
-        } else {
-          // This is likely a day of year (lastDayOfYearReset)
-          console.log(`✅ Last day of year reset field is set to: ${lastResetField} (day of year)`);
-          
-          const currentDayOfYear = Math.floor(dayTimestamp / secondsInDay) % 365 + 1;
-          console.log(`Current day of year: ${currentDayOfYear}`);
-          
-          if (Number(lastResetField) === currentDayOfYear) {
-            console.log("✅ Last day of year reset matches current day of year");
-          } else {
-            console.log(`⚠️ Last day of year reset doesn't match current day of year. Field: ${lastResetField}, Current: ${currentDayOfYear}`);
-          }
-        }
-      } else {
-        console.log("❌ Last reset field is not set");
+      console.log(`METs history length: ${metsHistory.length}`);
+      if (metsHistory.length > 0) {
+        console.log(`Latest METs record: ${metsHistory[metsHistory.length - 1].value} at ${new Date(Number(metsHistory[metsHistory.length - 1].timestamp) * 1000).toISOString()}`);
       }
-    } catch (error) {
-      console.log(`❌ Error accessing activity data fields: ${error}`);
     }
     
     // Set test user as premium

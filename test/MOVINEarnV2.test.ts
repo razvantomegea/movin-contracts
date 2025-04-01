@@ -164,7 +164,7 @@ describe("MOVINEarnV2", function () {
       // Calculate expected reward
       const reward = await movinEarn.connect(user1).calculateStakingReward(0);
       // No burn, full reward goes to user
-      const expectedReward = reward;
+      const expectedUserReward = reward;
       
       // Claim rewards
       const tx = await movinEarn.connect(user1).claimStakingRewards(0);
@@ -178,9 +178,9 @@ describe("MOVINEarnV2", function () {
       const referrerBalanceAfter = await movinToken.balanceOf(user2.address);
       
       // Use tolerance comparison instead of exact equality
-      const rewardDifference = expectedReward > actualReward ? 
-                               expectedReward - actualReward : 
-                               actualReward - expectedReward;
+      const rewardDifference = expectedUserReward > actualReward ? 
+                               expectedUserReward - actualReward : 
+                               actualReward - expectedUserReward;
                                
       expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
       expect(referrerBalanceAfter).to.equal(referrerBalanceBefore);
@@ -693,8 +693,8 @@ describe("MOVINEarnV2", function () {
       const halvingRateNumerator = BigInt(999);
       const halvingRateDenominator = BigInt(1000);
       
-      // Advance time by one day
-      await time.increase(ONE_DAY + 1);
+      // Advance time by 24 hours and 1 hour to ensure we cross the hourly threshold
+      await time.increase(25 * 60 * 60);
       
       // Trigger the decrease by recording activity
       await movinEarn.connect(user1).recordActivity(1000, 1);
@@ -717,8 +717,8 @@ describe("MOVINEarnV2", function () {
       const halvingRateNumerator = BigInt(999);
       const halvingRateDenominator = BigInt(1000);
       
-      // Advance time by three days
-      await time.increase(ONE_DAY * 3 + 1);
+      // Advance time by 72 hours (3 days) and 1 hour to ensure we cross the hourly threshold
+      await time.increase(73 * 60 * 60);
       
       // Trigger the decrease by recording activity
       await movinEarn.connect(user1).recordActivity(1000, 1);
@@ -732,6 +732,27 @@ describe("MOVINEarnV2", function () {
       }
       
       expect(newStepsRate).to.equal(expectedStepsRate);
+    });
+
+    it("Should not decrease rates if less than 24 hours have passed", async function () {
+      const initialStepsRate = await movinEarn.baseStepsRate();
+      const initialMetsRate = await movinEarn.baseMetsRate();
+
+      expect(initialStepsRate).to.equal(ethers.parseEther("1"));
+      expect(initialMetsRate).to.equal(ethers.parseEther("1"));
+      
+      // Advance time by 23 hours (less than 24 hours)
+      await time.increase(23 * 60 * 60);
+      
+      // Trigger activity recording
+      await movinEarn.connect(user1).recordActivity(1000, 1);
+      
+      // Check that rates were not decreased
+      const newStepsRate = await movinEarn.baseStepsRate();
+      const newMetsRate = await movinEarn.baseMetsRate();
+      
+      expect(newStepsRate).to.equal(initialStepsRate);
+      expect(newMetsRate).to.equal(initialMetsRate);
     });
   });
 
@@ -749,6 +770,8 @@ describe("MOVINEarnV2", function () {
       
       // Check referral info for user1 (the referrer)
       const [referrer1, earnedBonus1, referralCount1] = await movinEarn.getReferralInfo(user1.address);
+      expect(referrer1).to.equal("0x0000000000000000000000000000000000000000");
+      expect(earnedBonus1).to.equal(0);
       expect(referralCount1).to.equal(1); // user1 has 1 referral (user2)
     });
     
@@ -1202,6 +1225,169 @@ describe("MOVINEarnV2", function () {
       // Attempt to claim should revert
       await expect(movinEarn.connect(user1).claimRewards())
         .to.be.revertedWithCustomError(movinEarn, "RewardsExpired");
+    });
+  });
+
+  describe("Activity history", function () {
+    beforeEach(async function () {
+      // Set user1 as premium for testing both steps and METs history
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+    });
+
+    it("Should record steps history correctly", async function () {
+      // Record initial activity
+      await movinEarn.connect(user1).recordActivity(5000, 0);
+      
+      // Get steps history
+      const stepsHistory = await movinEarn.getUserStepsHistory(user1.address);
+      expect(stepsHistory.length).to.equal(1);
+      expect(stepsHistory[0].value).to.equal(5000n);
+      expect(stepsHistory[0].timestamp).to.be.gt(0n);
+      
+      // Record more steps - advance time by 2 minutes and record within per-minute limits
+      await time.increase(120); // Advance time by 2 minutes
+      await movinEarn.connect(user1).recordActivity(200, 0); // Record 200 steps (within 300 steps per minute limit)
+      
+      // Get updated history
+      const updatedHistory = await movinEarn.getUserStepsHistory(user1.address);
+      expect(updatedHistory.length).to.equal(2);
+      expect(updatedHistory[1].value).to.equal(5200n); // 5000 + 200
+      expect(updatedHistory[1].timestamp).to.be.gt(updatedHistory[0].timestamp);
+    });
+
+    it("Should record METs history for premium users", async function () {
+      // Record initial activity with METs
+      await movinEarn.connect(user1).recordActivity(0, 5);
+      
+      // Get METs history
+      const metsHistory = await movinEarn.getUserMetsHistory(user1.address);
+      expect(metsHistory.length).to.equal(1);
+      expect(metsHistory[0].value).to.equal(5n);
+      expect(metsHistory[0].timestamp).to.be.gt(0n);
+      
+      // Record more METs - advance time by 2 minutes and record within per-minute limits
+      await time.increase(120); // Advance time by 2 minutes
+      await movinEarn.connect(user1).recordActivity(0, 3); // Record 3 METs (within 5 METs per minute limit)
+      
+      // Get updated history
+      const updatedHistory = await movinEarn.getUserMetsHistory(user1.address);
+      expect(updatedHistory.length).to.equal(2);
+      expect(updatedHistory[1].value).to.equal(8n); // 5 + 3
+      expect(updatedHistory[1].timestamp).to.be.gt(updatedHistory[0].timestamp);
+    });
+
+    it("Should not record METs history for non-premium users", async function () {
+      // Set user2 as non-premium
+      await movinEarn.connect(owner).setPremiumStatus(user2.address, false);
+      
+      // Record activity with METs
+      await movinEarn.connect(user2).recordActivity(0, 5);
+      
+      // Get METs history (should be empty)
+      const metsHistory = await movinEarn.getUserMetsHistory(user2.address);
+      expect(metsHistory.length).to.equal(0);
+    });
+
+    it("Should maintain separate histories for steps and METs", async function () {
+      // Record activity with both steps and METs
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Get both histories
+      const stepsHistory = await movinEarn.getUserStepsHistory(user1.address);
+      const metsHistory = await movinEarn.getUserMetsHistory(user1.address);
+      
+      expect(stepsHistory.length).to.equal(1);
+      expect(metsHistory.length).to.equal(1);
+      expect(stepsHistory[0].value).to.equal(5000n);
+      expect(metsHistory[0].value).to.equal(5n);
+      
+      // Record more activity - advance time by 2 minutes and record within per-minute limits
+      await time.increase(120); // Advance time by 2 minutes
+      await movinEarn.connect(user1).recordActivity(200, 3); // Record 200 steps and 3 METs (within limits)
+      
+      // Get updated histories
+      const updatedStepsHistory = await movinEarn.getUserStepsHistory(user1.address);
+      const updatedMetsHistory = await movinEarn.getUserMetsHistory(user1.address);
+      
+      expect(updatedStepsHistory.length).to.equal(2);
+      expect(updatedMetsHistory.length).to.equal(2);
+      expect(updatedStepsHistory[1].value).to.equal(5200n); // 5000 + 200
+      expect(updatedMetsHistory[1].value).to.equal(8n); // 5 + 3
+    });
+
+    it("Should maintain history across day changes", async function () {
+      // Record initial activity
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Get initial history lengths
+      const initialStepsLength = await movinEarn.getUserStepsHistoryLength(user1.address);
+      const initialMetsLength = await movinEarn.getUserMetsHistoryLength(user1.address);
+      
+      // Advance time to next day
+      await time.increase(24 * 60 * 60 + 120); // 24 hours + 2 minutes
+      
+      // Record new activity
+      await movinEarn.connect(user1).recordActivity(200, 3); // Record 200 steps and 3 METs (within limits)
+      
+      // Get updated history lengths
+      const finalStepsLength = await movinEarn.getUserStepsHistoryLength(user1.address);
+      const finalMetsLength = await movinEarn.getUserMetsHistoryLength(user1.address);
+      
+      // Verify history lengths increased
+      expect(finalStepsLength).to.equal(initialStepsLength + 1n);
+      expect(finalMetsLength).to.equal(initialMetsLength + 1n);
+      
+      // Get final histories
+      const finalStepsHistory = await movinEarn.getUserStepsHistory(user1.address);
+      const finalMetsHistory = await movinEarn.getUserMetsHistory(user1.address);
+      
+      // Verify values are correct
+      expect(finalStepsHistory[Number(finalStepsLength - 1n)].value).to.equal(200n);
+      expect(finalMetsHistory[Number(finalMetsLength - 1n)].value).to.equal(3n);
+    });
+
+    it("Should not record history for zero activity", async function () {
+      // Record zero activity
+      await movinEarn.connect(user1).recordActivity(0, 0);
+      
+      // Get history lengths
+      const stepsLength = await movinEarn.getUserStepsHistoryLength(user1.address);
+      const metsLength = await movinEarn.getUserMetsHistoryLength(user1.address);
+      
+      // Verify no history was recorded
+      expect(stepsLength).to.equal(0n);
+      expect(metsLength).to.equal(0n);
+    });
+
+    it("Should record history with correct timestamps", async function () {
+      // Get current timestamp
+      const block = await ethers.provider.getBlock("latest");
+      const startTime = block ? BigInt(block.timestamp) : 0n;
+      
+      // Record initial activity
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Get histories
+      const stepsHistory = await movinEarn.getUserStepsHistory(user1.address);
+      const metsHistory = await movinEarn.getUserMetsHistory(user1.address);
+      
+      // Verify timestamps are after start time
+      expect(stepsHistory[0].timestamp).to.be.gt(startTime);
+      expect(metsHistory[0].timestamp).to.be.gt(startTime);
+      
+      // Advance time
+      await time.increase(120); // Advance time by 2 minutes
+      
+      // Record more activity - within per-minute limits
+      await movinEarn.connect(user1).recordActivity(200, 3); // Record 200 steps and 3 METs (within limits)
+      
+      // Get updated histories
+      const updatedStepsHistory = await movinEarn.getUserStepsHistory(user1.address);
+      const updatedMetsHistory = await movinEarn.getUserMetsHistory(user1.address);
+      
+      // Verify timestamps are in order
+      expect(updatedStepsHistory[1].timestamp).to.be.gt(updatedStepsHistory[0].timestamp);
+      expect(updatedMetsHistory[1].timestamp).to.be.gt(updatedMetsHistory[0].timestamp);
     });
   });
 }); 

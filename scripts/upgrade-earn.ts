@@ -26,7 +26,8 @@ async function main() {
         "struct-definition",
         "enum-definition",
         "storage-variable-assignment",
-        "storage-variable-structs"
+        "storage-variable-structs",
+        "array-length"
       ],
       unsafeAllowRenames: true,
       unsafeSkipStorageCheck: true
@@ -108,6 +109,7 @@ async function main() {
     // * lastMidnightReset → lastDayOfYearReset
     // * lastHourlyReset → lastUpdated
     // * Deleted hourlySteps and hourlyMets
+    // * Added userStepsHistory and userMetsHistory arrays
     
     // Get user addresses (simplified approach)
     const userFilter = movinEarnV2.filters.ActivityRecorded();
@@ -136,6 +138,33 @@ async function main() {
       const tx = await movinEarnV2.bulkMigrateUserData(userAddresses);
       await tx.wait();
       console.log("✅ User data migration completed");
+      
+      // Verify migration results
+      console.log("\nVerifying migration results...");
+      for (const userAddress of userAddresses) {
+        try {
+          const stepsHistoryLength = await movinEarnV2.getUserStepsHistoryLength(userAddress);
+          const metsHistoryLength = await movinEarnV2.getUserMetsHistoryLength(userAddress);
+          console.log(`User ${userAddress}:`);
+          console.log(`  Steps history length: ${stepsHistoryLength}`);
+          console.log(`  METs history length: ${metsHistoryLength}`);
+          
+          // Get the latest activity record if available
+          if (stepsHistoryLength > 0) {
+            const stepsHistory = await movinEarnV2.getUserStepsHistory(userAddress);
+            const latestSteps = stepsHistory[stepsHistory.length - 1];
+            console.log(`  Latest steps record: ${latestSteps.value} at ${new Date(Number(latestSteps.timestamp) * 1000).toISOString()}`);
+          }
+          
+          if (metsHistoryLength > 0) {
+            const metsHistory = await movinEarnV2.getUserMetsHistory(userAddress);
+            const latestMets = metsHistory[metsHistory.length - 1];
+            console.log(`  Latest METs record: ${latestMets.value} at ${new Date(Number(latestMets.timestamp) * 1000).toISOString()}`);
+          }
+        } catch (error) {
+          console.log(`❌ Error verifying migration for user ${userAddress}:`, error);
+        }
+      }
     } else {
       console.log("No users found to migrate, may need to use hardcoded user list for testing");
       // Optionally add hardcoded user list here
