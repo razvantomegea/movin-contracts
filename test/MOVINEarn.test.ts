@@ -303,7 +303,7 @@ describe("MOVINEarn", function () {
       await movinEarn.connect(user1).recordActivity(5000, 3);
       await time.increase(60 * 60); // Advance time by 1 hour for per-minute limits
       await movinEarn.connect(user1).recordActivity(4000, 4);
-      
+
       // Check total recorded activity
       const [recordedSteps, recordedMets] = await movinEarn.connect(user1).getUserActivity();
       expect(recordedSteps).to.equal(9000);
@@ -417,9 +417,8 @@ describe("MOVINEarn", function () {
       // Calculate time to next day of year
       const secondsInDay = 24 * 60 * 60;
       const currentDayOfYear = Math.floor(currentTimestamp / secondsInDay) % 365 + 1;
-      const nextDayOfYear = (currentDayOfYear % 365) + 1;
-      const daysToAdvance = (nextDayOfYear > currentDayOfYear) ? 1 : 366 - currentDayOfYear + nextDayOfYear;
-      const timeToAdvance = daysToAdvance * secondsInDay;
+      const nextDayOfYear = currentDayOfYear + 1;
+      const timeToAdvance = nextDayOfYear * secondsInDay;
       
       // Advance time to next day of year
       await time.increase(timeToAdvance);
@@ -488,7 +487,13 @@ describe("MOVINEarn", function () {
       console.log(`METs after fourth recording: ${metsAfterFourth}`);
       
       // Verify METs continue to accumulate
+      expect(stepsAfterFourth).to.equal(29700);
       expect(metsAfterFourth).to.equal(36); // 27 + 9
+
+      // Check pending rewards
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      expect(pendingStepsReward).to.equal(ethers.parseEther("2.97")); // 1 MVN per 10000 steps
+      expect(pendingMetsReward).to.equal(ethers.parseEther("3.6")); // 1 MVN per 10 mets
       
       // Advance time to next day of year
       const secondsInDay = 24 * 60 * 60;

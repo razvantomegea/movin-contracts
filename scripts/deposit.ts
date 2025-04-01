@@ -44,6 +44,9 @@ async function main() {
   // await depositTx.wait();
   // console.log("✅ Deposit successful");
 
+  const userActivity = await movinEarnV2.getUserActivity();
+  console.log(`User activity: ${userActivity[0]} steps, ${userActivity[1]} mets`);
+
   const pendingRewards = await movinEarnV2.getPendingRewards();
   console.log(`Pending rewards: ${ethers.formatEther(pendingRewards[0])} steps, ${ethers.formatEther(pendingRewards[1])} mets`);
   

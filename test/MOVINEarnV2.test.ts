@@ -417,9 +417,12 @@ describe("MOVINEarnV2", function () {
       // Calculate time to next day of year
       const secondsInDay = 24 * 60 * 60;
       const currentDayOfYear = Math.floor(currentTimestamp / secondsInDay) % 365 + 1;
-      const nextDayOfYear = (currentDayOfYear % 365) + 1;
-      const daysToAdvance = (nextDayOfYear > currentDayOfYear) ? 1 : 366 - currentDayOfYear + nextDayOfYear;
-      const timeToAdvance = daysToAdvance * secondsInDay;
+      const nextDayOfYear = currentDayOfYear + 1;
+      const timeToAdvance = nextDayOfYear * secondsInDay;
+
+      console.log('Current day of year:', currentDayOfYear);
+      console.log('Next day of year:', nextDayOfYear);
+      console.log('Time to advance:', timeToAdvance);
       
       // Advance time to next day of year
       await time.increase(timeToAdvance);
@@ -430,6 +433,48 @@ describe("MOVINEarnV2", function () {
       expect(resetMets).to.equal(0);
       
       // Record new activity on new day
+      await movinEarn.connect(user1).recordActivity(3000, 3);
+      
+      // Check new day's activity
+      const [newDaySteps, newDayMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(newDaySteps).to.equal(3000);
+      expect(newDayMets).to.equal(3);
+    });
+
+    it("Should reset daily activity counts when crossing midnight", async function () {
+      // Record initial activity at 11:00 PM
+      await movinEarn.connect(user1).recordActivity(5000, 5);
+      
+      // Check activity was recorded
+      const [initialSteps, initialMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(initialSteps).to.equal(5000);
+      expect(initialMets).to.equal(5);
+      
+      // Get current timestamp
+      const latestBlock = await ethers.provider.getBlock("latest");
+      const currentTimestamp = latestBlock ? latestBlock.timestamp : 0;
+      
+      // Calculate time to midnight (next day)
+      const secondsInDay = 24 * 60 * 60;
+      const currentDayTimestamp = Math.floor(currentTimestamp / secondsInDay) * secondsInDay;
+      const timeToMidnight = currentDayTimestamp + secondsInDay - currentTimestamp;
+      
+      // Add 1 hour to ensure we're past midnight
+      const timeToAdvance = timeToMidnight + 3600;
+      
+      console.log('Current timestamp:', currentTimestamp);
+      console.log('Time to midnight:', timeToMidnight);
+      console.log('Time to advance:', timeToAdvance);
+      
+      // Advance time past midnight
+      await time.increase(timeToAdvance);
+      
+      // Check if activity was reset (should return 0 without recording new activity)
+      const [resetSteps, resetMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(resetSteps).to.equal(0);
+      expect(resetMets).to.equal(0);
+      
+      // Record new activity after midnight
       await movinEarn.connect(user1).recordActivity(3000, 3);
       
       // Check new day's activity
