@@ -15,9 +15,10 @@ describe("MOVINEarnV2", function () {
   // Constants
   const STEPS_THRESHOLD = 10_000;
   const METS_THRESHOLD = 10;
-  const MAX_DAILY_STEPS = 25_000;
-  const MAX_DAILY_METS = 50;
-  const ONE_TOKEN = ethers.parseEther("1");
+  const MAX_DAILY_STEPS = 30_000;
+  const MAX_DAILY_METS = 500;
+  const MAX_STEPS_PER_MINUTE = 300;
+  const MAX_METS_PER_MINUTE = 5;
   const ONE_THOUSAND_TOKENS = ethers.parseEther("1000");
   const UNSTAKE_BURN_FEES_PERCENT = 1;
   const ACTIVITY_REFERRAL_BONUS_PERCENT = 1;
@@ -560,6 +561,96 @@ describe("MOVINEarnV2", function () {
       const [stepsNewDay, metsNewDay] = await movinEarn.connect(user1).getUserActivity();
       expect(stepsNewDay).to.equal(9900);
       expect(metsNewDay).to.equal(9);
+    });
+
+    it("Should enforce per-minute rate limits for steps and METs", async function () {
+      // Set user as premium
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+
+      // Record activity within per-minute limits
+      await movinEarn.connect(user1).recordActivity(MAX_STEPS_PER_MINUTE, MAX_METS_PER_MINUTE);
+      
+      // Try to record activity exceeding per-minute limits
+      await expect(movinEarn.connect(user1).recordActivity(MAX_STEPS_PER_MINUTE + 100, MAX_METS_PER_MINUTE + 1))
+        .to.be.revertedWithCustomError(movinEarn, "InvalidActivityInput");
+    
+      // Verify recorded activity
+      const [steps, mets] = await movinEarn.connect(user1).getUserActivity();
+      expect(steps).to.equal(MAX_STEPS_PER_MINUTE);
+      expect(mets).to.equal(MAX_METS_PER_MINUTE);
+      
+      // Wait less than a minute
+      await time.increase(30); // 30 seconds
+      
+      // Try to record more activity immediately (should fail)
+      await expect(movinEarn.connect(user1).recordActivity(100, 1))
+        .to.be.revertedWithCustomError(movinEarn, "InvalidActivityInput");
+      
+      // Wait for a full minute
+      await time.increase(30); // Another 30 seconds to complete the minute
+      
+      // Now should be able to record more activity
+      await movinEarn.connect(user1).recordActivity(MAX_STEPS_PER_MINUTE, MAX_METS_PER_MINUTE);
+      
+      // Verify accumulated activity
+      const [accumulatedSteps, accumulatedMets] = await movinEarn.connect(user1).getUserActivity();
+      expect(accumulatedSteps).to.equal(MAX_STEPS_PER_MINUTE * 2);
+      expect(accumulatedMets).to.equal(MAX_METS_PER_MINUTE * 2);
+    });
+
+    it("Should enforce daily METs limit", async function () {
+      // Set user as premium
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      
+      // Calculate how many METs we can record per minute to reach daily limit
+      // We need to stay within MAX_METS_PER_MINUTE (5) while trying to reach MAX_DAILY_METS (500)
+      const metsPerMinute = MAX_METS_PER_MINUTE; // Use max allowed per minute
+      const minutesNeeded = Math.ceil(MAX_DAILY_METS / metsPerMinute); // Calculate minutes needed
+      
+      // Record activity for multiple minutes (within per-minute limits)
+      for (let i = 0; i < minutesNeeded; i++) {
+        await movinEarn.connect(user1).recordActivity(0, metsPerMinute);
+        await time.increase(60); // Advance by 1 minute
+      }
+      
+      // Verify we've reached the daily limit
+      const [_, mets] = await movinEarn.connect(user1).getUserActivity();
+      expect(mets).to.equal(MAX_DAILY_METS);
+      
+      // Record more METs (should succeed)
+      await movinEarn.connect(user1).recordActivity(0, 1);
+      
+      // Verify METs continue to accumulate beyond daily limit
+      const [__, metsAfterExceed] = await movinEarn.connect(user1).getUserActivity();
+      expect(metsAfterExceed).to.equal(MAX_DAILY_METS + 1);
+      
+      // Check that rewards continue to accumulate beyond daily limit
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      expect(pendingStepsReward).to.equal(0);
+      expect(pendingMetsReward).to.equal(ethers.parseEther("50")); // 501 METs = 50.1 MVN (1 MVN per 10 METs)
+      
+      // Advance time to next day
+      await time.increase(24 * 60 * 60);
+      
+      // Record activity in new day
+      await movinEarn.connect(user1).recordActivity(0, 1);
+      
+      // Verify METs were reset and new recording worked
+      const [___, metsNewDay] = await movinEarn.connect(user1).getUserActivity();
+      expect(metsNewDay).to.equal(1);
+      
+      // Verify rewards persist from previous day
+      const [newPendingStepsReward, newPendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      expect(newPendingStepsReward).to.equal(0);
+      expect(newPendingMetsReward).to.equal(ethers.parseEther("50")); // Rewards should persist
+      
+      // Claim rewards
+      await movinEarn.connect(user1).claimRewards();
+      
+      // Verify rewards were reset after claiming
+      const [finalPendingStepsReward, finalPendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      expect(finalPendingStepsReward).to.equal(0);
+      expect(finalPendingMetsReward).to.equal(0);
     });
 
     it("Should validate the lastUpdated field is set during activity recording", async function () {

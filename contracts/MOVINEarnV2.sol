@@ -123,10 +123,10 @@ contract MOVINEarnV2 is
     uint256 public rewardHalvingTimestamp;
     uint256 public baseStepsRate;
     uint256 public baseMetsRate;
-    uint256 public constant MAX_DAILY_STEPS = 25_000;
-    uint256 public constant MAX_DAILY_METS = 50;
-    uint256 public constant MAX_STEPS_PER_MINUTE = 200;
-    uint256 public constant MAX_METS_PER_MINUTE = 1;
+    uint256 public constant MAX_DAILY_STEPS = 30_000;
+    uint256 public constant MAX_DAILY_METS = 500;
+    uint256 public constant MAX_STEPS_PER_MINUTE = 300;
+    uint256 public constant MAX_METS_PER_MINUTE = 5;
     uint256 public constant UNSTAKE_BURN_FEES_PERCENT = 1;
     uint256 public constant REFERRAL_BONUS_PERCENT = 1; // 1% of referee's claimed rewards
     uint256 public constant HALVING_DECREASE_PERCENT = 1; // Represents 0.1% (used for documentation only)
@@ -463,10 +463,6 @@ contract MOVINEarnV2 is
         uint256 newSteps,
         uint256 newMets
     ) external whenNotPausedWithRevert {
-        if (newSteps > MAX_DAILY_STEPS || newMets > MAX_DAILY_METS) {
-            revert InvalidActivityInput();
-        }
-
         // Skip validation completely if both inputs are zero
         // This allows referral registration to work properly
         if (newSteps == 0 && newMets == 0) {
@@ -525,7 +521,10 @@ contract MOVINEarnV2 is
         _checkDailyDecrease();
 
         uint256 stepsReward = 0;
-        if (activity.dailySteps >= STEPS_THRESHOLD) {
+        if (
+            activity.dailySteps >= STEPS_THRESHOLD &&
+            activity.dailySteps <= MAX_DAILY_STEPS
+        ) {
             stepsReward =
                 (activity.dailySteps * baseStepsRate) /
                 STEPS_THRESHOLD;
@@ -533,7 +532,11 @@ contract MOVINEarnV2 is
         }
 
         uint256 metsReward = 0;
-        if (activity.isPremium && activity.dailyMets >= METS_THRESHOLD) {
+        if (
+            activity.isPremium &&
+            activity.dailyMets >= METS_THRESHOLD &&
+            activity.dailyMets <= MAX_DAILY_METS
+        ) {
             metsReward = (activity.dailyMets * baseMetsRate) / METS_THRESHOLD;
             activity.pendingMetsRewards = metsReward;
         }
