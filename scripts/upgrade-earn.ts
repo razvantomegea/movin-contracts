@@ -68,9 +68,42 @@ async function main() {
       console.log("❌ Failed to check or transfer token ownership:", error.message);
     }
 
+    const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", upgradedAddress);
+
+    // First, check and fix base rates if they're corrupted
+    console.log("\nChecking base rates...");
+    try {
+      const beforeBaseStepsRate = await movinEarnV2.baseStepsRate();
+      const beforeBaseMetsRate = await movinEarnV2.baseMetsRate();
+      console.log("Current base rates:");
+      console.log(`  Steps rate: ${ethers.formatEther(beforeBaseStepsRate)}`);
+      console.log(`  METs rate: ${ethers.formatEther(beforeBaseMetsRate)}`);
+
+      // Check if rates are corrupted (either too large or zero)
+      const MAX_REASONABLE_RATE = ethers.parseEther("1"); // 1000 tokens as a reasonable maximum
+      if (beforeBaseStepsRate > MAX_REASONABLE_RATE || beforeBaseMetsRate === BigInt(0)) {
+        console.log("⚠️ Base rates appear to be corrupted, attempting to fix...");
+        await movinEarnV2.migrateBaseRates();
+        console.log("✅ Base rates migration completed");
+
+        const afterBaseStepsRate = await movinEarnV2.baseStepsRate();
+        const afterBaseMetsRate = await movinEarnV2.baseMetsRate();
+        console.log("Updated base rates:");
+        console.log(`  Steps rate: ${ethers.formatEther(afterBaseStepsRate)}`);
+        console.log(`  METs rate: ${ethers.formatEther(afterBaseMetsRate)}`);
+      } else {
+        console.log("✅ Base rates appear to be correct");
+      }
+    } catch (error: any) {
+      console.log("❌ Failed to check or fix base rates:", error.message);
+      if (error.data) {
+        console.log("Error data:", error.data);
+      }
+      throw error; // Stop the upgrade if we can't fix the base rates
+    }
+
     // Initialize V2 functionality
     console.log("Initializing V2 functionality...");
-    const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", upgradedAddress);
 
     // Record the halving timestamp before initialization for verification
     const beforeHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();

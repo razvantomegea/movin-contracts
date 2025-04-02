@@ -19,14 +19,14 @@ async function main() {
   // Get contract instances
   const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", MOVIN_EARN_PROXY_ADDRESS, wallet);
   const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS, wallet);
-  
+
   // Amount to deposit (in ether units - will be converted to wei)
   const depositAmount = ethers.parseEther("90000000");
-  
+
   // Check token balance
   const tokenBalance = await movinToken.balanceOf(wallet.address);
   console.log(`Token balance: ${ethers.formatEther(tokenBalance)} MOVIN`);
-  
+
   if (tokenBalance < depositAmount) {
     console.log("❌ Insufficient token balance for deposit");
     return;
@@ -37,19 +37,19 @@ async function main() {
   // const approveTx = await movinToken.approve(MOVIN_EARN_PROXY_ADDRESS, depositAmount);
   // await approveTx.wait();
   // console.log("✅ Tokens approved");
-  
+
   // Deposit tokens
   // console.log(`Depositing ${ethers.formatEther(depositAmount)} MOVIN tokens...`);
   // const depositTx = await movinEarnV2.deposit(depositAmount);
   // await depositTx.wait();
   // console.log("✅ Deposit successful");
 
-  const userActivity = await movinEarnV2.getUserActivity();
-  console.log(`User activity: ${userActivity[0]} steps, ${userActivity[1]} mets`);
+  const userActivity = await movinEarnV2.userActivities(wallet.address);
+  console.log(`User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.isPremium} is premium, ${userActivity.lastUpdated} last updated`);
 
-  const pendingRewards = await movinEarnV2.getPendingRewards();
+  const pendingRewards = await movinEarnV2.connect(wallet).getPendingRewards();
   console.log(`Pending rewards: ${ethers.formatEther(pendingRewards[0])} steps, ${ethers.formatEther(pendingRewards[1])} mets`);
-  
+
   // Verify deposit by checking contract balance
   const contractBalance = await movinToken.balanceOf(MOVIN_EARN_PROXY_ADDRESS);
   console.log(`Contract token balance: ${ethers.formatEther(contractBalance)} MOVIN`);

@@ -785,6 +785,23 @@ contract MOVINEarnV2 is
     emit UserDataMigrated(user, true);
   }
 
+  // V2: Function to migrate base rates and halving timestamp
+  function migrateBaseRates() external onlyOwner {
+    // Only migrate if rates are zero (indicating they weren't properly migrated)
+    if (baseStepsRate == 0 || baseMetsRate == 0) {
+      // Set both rates to 1 token (1 * 10^18 wei)
+      baseStepsRate = 0.997 * 10 ** 18;
+      baseMetsRate = 0.997 * 10 ** 18;
+
+      // If halving timestamp is not set, set it to current block timestamp
+      if (rewardHalvingTimestamp == 0) {
+        rewardHalvingTimestamp = block.timestamp;
+      }
+    }
+
+    emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
+  }
+
   function getUserStepsHistory(address user) external view returns (ActivityRecord[] memory) {
     return userStepsHistory[user];
   }
