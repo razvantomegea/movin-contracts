@@ -209,6 +209,10 @@ contract MOVINEarnV2 is
     userActivities[user].isPremium = status;
   }
 
+  function importRewardHalvingTimestamp(uint256 timestamp) external onlyMigrator {
+    rewardHalvingTimestamp = timestamp;
+  }
+
   // Add pausable functionality
   function emergencyPause() external onlyOwner {
     _pause();

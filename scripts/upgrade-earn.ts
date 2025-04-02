@@ -139,6 +139,13 @@ async function main() {
       console.log(`✅ Migration already initialized with migrator: ${currentMigrator}`);
     }
 
+    const latestBlockBefore = await ethers.provider.getBlock('latest');
+    const newTimestamp = latestBlockBefore?.timestamp ?? 0;
+    console.log("Importing reward halving timestamp...");
+    await movinEarnV2.importRewardHalvingTimestamp(newTimestamp);
+    const rewardHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();
+    console.log("✅ Reward halving timestamp imported:", new Date(Number(rewardHalvingTimestamp) * 1000).toISOString());
+
     // Run migration to fix any data alignment issues
     // Note: All existing data is preserved by the proxy, but field renames need manual handling
     // * lastHourlyReset → lastUpdated

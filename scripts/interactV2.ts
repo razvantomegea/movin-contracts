@@ -149,67 +149,6 @@ async function setupTestData(movinEarnV2: any, movinToken: any, users: any[], ow
   }
 }
 
-async function verifyUserState(contract: any, user: any, stage: string) {
-  console.log(`\nVerifying state for user ${user.address} ${stage}:`);
-
-  try {
-    // Check stakes
-    const stakeCount = await contract.connect(user).getUserStakeCount();
-    console.log(`✅ User has ${stakeCount} stakes`);
-
-    if (stakeCount > 0) {
-      // Get first stake details
-      const firstStake = await contract.connect(user).getUserStake(0);
-      console.log(`  - First stake amount: ${ethers.formatEther(firstStake.amount)} MOVIN`);
-      console.log(`  - Lock duration: ${firstStake.lockDuration} months`);
-      console.log(
-        `  - Last claimed timestamp: ${new Date(Number(firstStake.lastClaimed) * 1000).toISOString()}`
-      );
-    }
-
-    // Check premium status
-    const isPremium = await contract.getIsPremiumUser(user.address);
-    console.log(`✅ Premium status: ${isPremium}`);
-
-    // Check activity data
-    try {
-      const [steps, mets] = await contract.connect(user).getUserActivity();
-      console.log(`✅ Daily activity: ${steps} steps, ${mets} METs`);
-
-      // Get pending rewards if function exists (V2 only)
-      if (contract.interface.hasFunction('getPendingRewards')) {
-        const [pendingStepsReward, pendingMetsReward] = await contract
-          .connect(user)
-          .getPendingRewards();
-        console.log(
-          `✅ Pending activity rewards: ${ethers.formatEther(pendingStepsReward)} steps, ${ethers.formatEther(pendingMetsReward)} METs`
-        );
-      }
-    } catch (error) {
-      console.log(
-        `❌ Error reading activity data: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-
-    // Check referral info if function exists (V2 only)
-    if (contract.interface.hasFunction('getReferralInfo')) {
-      try {
-        const [referrer, referralCount] = await contract.getReferralInfo(user.address);
-        console.log(`✅ Referrer: ${referrer === ethers.ZeroAddress ? 'None' : referrer}`);
-        console.log(`✅ Referred users count: ${referralCount}`);
-      } catch (error) {
-        console.log(
-          `❌ Error reading referral info: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    }
-  } catch (error) {
-    console.error(
-      `❌ Error verifying user state: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-
 async function testReferrals(
   movinEarnV2: any,
   referrer: any,
