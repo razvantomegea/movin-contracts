@@ -47,9 +47,13 @@ async function main() {
   const userActivity = await movinEarnV2.userActivities(wallet.address);
   console.log(`User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.isPremium} is premium, ${userActivity.lastUpdated} last updated`);
 
+  const latestBlock = await provider.getBlock("latest");
+  const latestBlockTimestamp = Number(latestBlock?.timestamp);
+  console.log(`Latest block: ${latestBlockTimestamp}`);
+  console.log(`Latest block date: ${new Date(latestBlockTimestamp * 1000).toLocaleString()}`);
   const rewardHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();
   // Convert nanoseconds to milliseconds and create a Date object
-  const rewardHalvingDate = new Date(Number(rewardHalvingTimestamp) / 1000);
+  const rewardHalvingDate = new Date(Number(rewardHalvingTimestamp) * 1000);
   console.log(`Reward halving timestamp (raw): ${rewardHalvingTimestamp}`);
   console.log(`Reward halving date: ${rewardHalvingDate.toLocaleString()}`);
 
