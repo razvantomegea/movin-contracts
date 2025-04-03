@@ -209,10 +209,6 @@ contract MOVINEarnV2 is
     userActivities[user].isPremium = status;
   }
 
-  function importRewardHalvingTimestamp(uint256 timestamp) external onlyMigrator {
-    rewardHalvingTimestamp = timestamp;
-  }
-
   // Add pausable functionality
   function emergencyPause() external onlyOwner {
     _pause();
@@ -790,18 +786,18 @@ contract MOVINEarnV2 is
   }
 
   // V2: Function to migrate base rates and halving timestamp
-  function migrateBaseRates() external onlyOwner {
+  function migrateBaseRates(uint256 newStepsRate, uint256 newMetsRate) external onlyOwner {
     // Only migrate if rates are zero (indicating they weren't properly migrated)
     if (baseStepsRate == 0 || baseMetsRate == 0) {
       // Set both rates to 1 token (1 * 10^18 wei)
-      baseStepsRate = 0.997 * 10 ** 18;
-      baseMetsRate = 0.997 * 10 ** 18;
-
-      // If halving timestamp is not set, set it to current block timestamp
-      if (rewardHalvingTimestamp == 0) {
-        rewardHalvingTimestamp = block.timestamp;
-      }
+      baseStepsRate = 1 * 10 ** 18;
+      baseMetsRate = 1 * 10 ** 18;
+    } else {
+      baseStepsRate = newStepsRate;
+      baseMetsRate = newMetsRate;
     }
+
+    rewardHalvingTimestamp = block.timestamp;
 
     emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
   }

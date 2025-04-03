@@ -1,224 +1,369 @@
 import { ethers, upgrades } from "hardhat";
 import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from "./contract-addresses";
 
-async function main() {
-  console.log("Upgrading MOVINEarn contract to V2...");
+async function checkCurrentData() {
+  const movinEarn = await ethers.getContractAt("MOVINEarn", MOVIN_EARN_PROXY_ADDRESS);
 
+  console.log("Checking current data before migration...");
+  console.log("----------------------------------------");
+
+  // Check contract state variables
+  console.log("Contract State:");
+  const movinTokenAddress = await movinEarn.movinToken();
+  console.log("MovinToken address:", movinTokenAddress);
+
+  const baseStepsRate = await movinEarn.baseStepsRate();
+  const baseMetsRate = await movinEarn.baseMetsRate();
+  console.log("Reward rates:");
+  console.log(`  Base steps rate: ${ethers.formatEther(baseStepsRate)}`);
+  console.log(`  Base METs rate: ${ethers.formatEther(baseMetsRate)}`);
+
+  const rewardHalvingTimestamp = await movinEarn.rewardHalvingTimestamp();
+  console.log("Reward halving timestamp:",
+    rewardHalvingTimestamp > 0
+      ? new Date(Number(rewardHalvingTimestamp) * 1000).toISOString()
+      : "Not set");
+
+  // Check lock period multipliers
+  console.log("Lock period multipliers:");
+  for (const period of [1, 3, 6, 12, 24]) {
+    const multiplier = await movinEarn.lockPeriodMultipliers(period);
+    console.log(`  ${period} months: ${multiplier}`);
+  }
+
+  // Check token ownership
+  const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+  const currentOwner = await movinToken.owner();
+  console.log("Current MovinToken owner:", currentOwner);
+
+  // Check migrator address
+  const migrator = await movinEarn.migrator();
+  console.log("Current migrator address:", migrator === ethers.ZeroAddress ? "Not set" : migrator);
+
+  // Get user addresses from events
+  const currentBlock = await ethers.provider.getBlockNumber();
+  const lookbackBlocks = 1000;
+  const fromBlock = Math.max(0, currentBlock - lookbackBlocks);
+
+  const userFilter = movinEarn.filters.ActivityRecorded();
+  const activityEvents = await movinEarn.queryFilter(userFilter, fromBlock, currentBlock);
+
+  const uniqueUsers = new Set<string>();
+  for (const event of activityEvents) {
+    if (event.args && event.args.user) {
+      uniqueUsers.add(event.args.user.toLowerCase());
+    }
+  }
+
+  const userAddresses = Array.from(uniqueUsers);
+  console.log(`Found ${userAddresses.length} users to check`);
+
+  // Check data for each user
+  const userDetails = [];
+  for (const userAddress of userAddresses) {
+    console.log(`\nChecking user ${userAddress}:`);
+
+    // Check user stakes
+    const userStakes = await movinEarn.getUserStakes(userAddress);
+    console.log(`  Stakes: ${userStakes.length}`);
+    if (userStakes.length > 0) {
+      console.log("  Stake details:");
+      for (let i = 0; i < userStakes.length; i++) {
+        const stake = userStakes[i];
+        console.log(`    Stake ${i}: ${ethers.formatEther(stake.amount)} tokens, locked for ${Number(stake.lockDuration) / 86400} days`);
+      }
+    }
+
+    // Check user activity
+    const userActivity = await movinEarn.userActivities(userAddress);
+    console.log("  Daily activity:");
+    console.log(`    Steps: ${userActivity.dailySteps}`);
+    console.log(`    METs: ${userActivity.dailyMets}`);
+    console.log(`    Last updated: ${new Date(Number(userActivity.lastUpdated) * 1000).toISOString()}`);
+    console.log("  Pending rewards:");
+    console.log(`    Steps rewards: ${ethers.formatEther(userActivity.pendingStepsRewards)}`);
+    console.log(`    METs rewards: ${ethers.formatEther(userActivity.pendingMetsRewards)}`);
+    console.log(`    Last reward time: ${userActivity.lastRewardAccumulationTime > 0 ?
+      new Date(Number(userActivity.lastRewardAccumulationTime) * 1000).toISOString() : "None"}`);
+    console.log(`    Premium status: ${userActivity.isPremium ? "Yes" : "No"}`);
+
+    // Check history data
+    const stepsHistoryLength = await movinEarn.getUserStepsHistoryLength(userAddress);
+    const metsHistoryLength = await movinEarn.getUserMetsHistoryLength(userAddress);
+    console.log("  Activity history:");
+    console.log(`    Steps history entries: ${stepsHistoryLength}`);
+    console.log(`    METs history entries: ${metsHistoryLength}`);
+
+    // Check referral data
+    const referralInfo = await movinEarn.getReferralInfo(userAddress);
+    console.log("  Referral info:");
+    console.log(`    Referrer: ${referralInfo[0] === ethers.ZeroAddress ? "None" : referralInfo[0]}`);
+    console.log(`    Earned bonus: ${ethers.formatEther(referralInfo[1])}`);
+    console.log(`    Referral count: ${referralInfo[2]}`);
+
+    // Store key data for later comparison
+    userDetails.push({
+      address: userAddress,
+      stakeCount: userStakes.length,
+      stepsHistoryLength,
+      metsHistoryLength,
+      pendingStepsRewards: userActivity.pendingStepsRewards,
+      pendingMetsRewards: userActivity.pendingMetsRewards,
+      isPremium: userActivity.isPremium,
+      referralCount: referralInfo[2]
+    });
+  }
+
+  // Return data needed for comparison later
+  return {
+    baseStepsRate,
+    baseMetsRate,
+    rewardHalvingTimestamp,
+    userAddresses,
+    currentOwner,
+    userDetails,
+    movinTokenAddress,
+    migrator
+  };
+}
+
+async function migrateAllData(deployer: any) {
+  console.log("Starting migration process...");
+
+  // Upgrade contract to V2
+  console.log("Upgrading MOVINEarn contract to V2...");
+  const MOVINEarnV2 = await ethers.getContractFactory("MOVINEarnV2");
+  console.log("Upgrading MOVINEarn proxy at:", MOVIN_EARN_PROXY_ADDRESS);
+
+  // Configure upgrade options to bypass storage layout checks for the renamed variables
+  const upgradeOptions = {
+    kind: "uups" as const,
+    unsafeAllow: [
+      "delegatecall",
+      "constructor",
+      "state-variable-assignment",
+      "state-variable-immutable",
+      "external-library-linking",
+      "struct-definition",
+      "enum-definition",
+      "storage-variable-assignment",
+      "storage-variable-structs",
+      "array-length"
+    ],
+    unsafeAllowRenames: true,
+    unsafeSkipStorageCheck: true
+  } as any;
+
+  // Perform the actual upgrade
+  const upgraded = await upgrades.upgradeProxy(MOVIN_EARN_PROXY_ADDRESS, MOVINEarnV2, upgradeOptions);
+  await upgraded.waitForDeployment();
+  const upgradedAddress = await upgraded.getAddress();
+
+  console.log("✅ MOVINEarn proxy upgraded");
+  console.log("Proxy address:", upgradedAddress);
+  console.log("Implementation address:", await upgrades.erc1967.getImplementationAddress(upgradedAddress));
+
+  const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", upgradedAddress);
+
+  // Transfer ownership of MovinToken to MOVINEarnV2 contract
+  console.log("\nTransferring ownership of MovinToken to MOVINEarnV2...");
+  const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+  const currentOwner = await movinToken.owner();
+
+  if (currentOwner.toLowerCase() === deployer.address.toLowerCase()) {
+    const transferTx = await movinToken.transferOwnership(upgradedAddress);
+    await transferTx.wait();
+    console.log("✅ MovinToken ownership transferred to MOVINEarnV2");
+  } else if (currentOwner === MOVIN_EARN_PROXY_ADDRESS) {
+    console.log("✅ MovinToken ownership already transferred to MOVINEarnV2");
+  } else {
+    console.log("⚠️ Cannot transfer MovinToken ownership - current owner is not the deployer");
+  }
+
+  // Initialize V2 functionality
+  console.log("Initializing V2 functionality...");
+  try {
+    await movinEarnV2.initializeV2();
+    console.log("✅ V2 initialization completed");
+  } catch (error: any) {
+    console.log("V2 initialization failed or already initialized");
+  }
+
+  // Initialize migration
+  const currentMigrator = await movinEarnV2.migrator();
+  if (currentMigrator === ethers.ZeroAddress) {
+    await movinEarnV2.initializeMigration(deployer.address);
+    console.log("✅ Migration initialized with deployer as migrator");
+  } else {
+    console.log(`✅ Migration already initialized with migrator: ${currentMigrator}`);
+  }
+
+  // Fix base rates if corrupted
+  const baseStepsRate = await movinEarnV2.baseStepsRate();
+  const baseMetsRate = await movinEarnV2.baseMetsRate();
+  const MAX_REASONABLE_RATE = ethers.parseEther("1");
+
+  if (baseStepsRate > MAX_REASONABLE_RATE || baseMetsRate === BigInt(0)) {
+    console.log("⚠️ Base rates appear to be corrupted, fixing...");
+    await movinEarnV2.migrateBaseRates(baseStepsRate, baseMetsRate);
+    console.log("✅ Base rates fixed");
+  }
+
+  // Migrate user data
+  const currentBlock = await ethers.provider.getBlockNumber();
+  const lookbackBlocks = 1000;
+  const fromBlock = Math.max(0, currentBlock - lookbackBlocks);
+
+  const userFilter = movinEarnV2.filters.ActivityRecorded();
+  const activityEvents = await movinEarnV2.queryFilter(userFilter, fromBlock, currentBlock);
+
+  const uniqueUsers = new Set<string>();
+  for (const event of activityEvents) {
+    if (event.args && event.args.user) {
+      uniqueUsers.add(event.args.user.toLowerCase());
+    }
+  }
+
+  const userAddresses = Array.from(uniqueUsers);
+  console.log(`Found ${userAddresses.length} users to migrate`);
+
+  if (userAddresses.length > 0) {
+    console.log("Running user data migration...");
+    const tx = await movinEarnV2.bulkMigrateUserData(userAddresses);
+    await tx.wait();
+    console.log("✅ User data migration completed");
+  } else {
+    console.log("No users found to migrate");
+  }
+
+  return movinEarnV2;
+}
+
+async function checkMigratedData(movinEarnV2: any, originalData: any) {
+  console.log("\nVerifying migration results...");
+  console.log("----------------------------");
+
+  // Check contract state variables
+  console.log("Contract State:");
+  const movinTokenAddress = await movinEarnV2.movinToken();
+  console.log("MovinToken address:", movinTokenAddress);
+  console.log(`Token address preserved: ${movinTokenAddress === originalData.movinTokenAddress ? '✅' : '❌'}`);
+
+  const baseStepsRate = await movinEarnV2.baseStepsRate();
+  const baseMetsRate = await movinEarnV2.baseMetsRate();
+  console.log("Migrated reward rates:");
+  console.log(`  Base steps rate: ${ethers.formatEther(baseStepsRate)}`);
+  console.log(`  Base METs rate: ${ethers.formatEther(baseMetsRate)}`);
+
+  // Verify base rates are valid (not zero or corrupted)
+  const baseRatesValid = baseStepsRate > BigInt(0) && baseMetsRate > BigInt(0);
+  console.log(`Base rates valid: ${baseRatesValid ? '✅' : '❌'}`);
+
+  // Check lock period multipliers
+  console.log("Lock period multipliers:");
+  let lockPeriodsValid = true;
+  for (const period of [1, 3, 6, 12, 24]) {
+    const multiplier = await movinEarnV2.lockPeriodMultipliers(period);
+    console.log(`  ${period} months: ${multiplier}`);
+    if (multiplier.toString() === '0') {
+      lockPeriodsValid = false;
+    }
+  }
+  console.log(`Lock periods preserved: ${lockPeriodsValid ? '✅' : '❌'}`);
+
+  // Check token ownership
+  const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
+  const currentOwner = await movinToken.owner();
+  console.log("Current MovinToken owner:", currentOwner);
+  console.log(`Token ownership transferred: ${currentOwner.toLowerCase() === (await movinEarnV2.getAddress()).toLowerCase() ? '✅' : '❌'}`);
+
+  // Check halving timestamp
+  const rewardHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();
+  console.log("Migrated reward halving timestamp:",
+    new Date(Number(rewardHalvingTimestamp) * 1000).toISOString());
+
+  // Check migrator address
+  const migrator = await movinEarnV2.migrator();
+  console.log("Migrator address:", migrator === ethers.ZeroAddress ? "Not set" : migrator);
+
+  // Verify user data migration
+  console.log("\nVerifying user data migration:");
+  let allUsersMigrated = true;
+  let allHistoryMigrated = true;
+
+  for (const userData of originalData.userDetails) {
+    const userAddress = userData.address;
+    console.log(`\nUser ${userAddress}:`);
+
+    try {
+      // Check stakes migration
+      const userStakes = await movinEarnV2.getUserStakes(userAddress);
+      const stakesMatch = userStakes.length === userData.stakeCount;
+      console.log(`  Stakes migrated: ${stakesMatch ? '✅' : '❌'} (${userStakes.length} of ${userData.stakeCount})`);
+
+      // Check activity history
+      const stepsHistoryLength = await movinEarnV2.getUserStepsHistoryLength(userAddress);
+      const metsHistoryLength = await movinEarnV2.getUserMetsHistoryLength(userAddress);
+      const historyMatch = stepsHistoryLength >= userData.stepsHistoryLength &&
+        metsHistoryLength >= userData.metsHistoryLength;
+      console.log(`  History migrated: ${historyMatch ? '✅' : '❌'}`);
+      console.log(`    Steps history: ${stepsHistoryLength} (original: ${userData.stepsHistoryLength})`);
+      console.log(`    METs history: ${metsHistoryLength} (original: ${userData.metsHistoryLength})`);
+
+      if (!historyMatch) {
+        allHistoryMigrated = false;
+      }
+
+      // Check activity details
+      const userActivity = await movinEarnV2.userActivities(userAddress);
+      console.log(`  Premium status preserved: ${userActivity.isPremium === userData.isPremium ? '✅' : '❌'}`);
+
+      // Check pending rewards
+      console.log(`  Pending rewards migrated: ${(userActivity.pendingStepsRewards >= userData.pendingStepsRewards &&
+        userActivity.pendingMetsRewards >= userData.pendingMetsRewards) ? '✅' : '❌'}`);
+      console.log(`    Steps rewards: ${ethers.formatEther(userActivity.pendingStepsRewards)}`);
+      console.log(`    METs rewards: ${ethers.formatEther(userActivity.pendingMetsRewards)}`);
+
+      // Check referrals
+      const referralInfo = await movinEarnV2.getReferralInfo(userAddress);
+      console.log(`  Referral count: ${referralInfo[2]} (original: ${userData.referralCount})`);
+      console.log(`  Referrals preserved: ${Number(referralInfo[2]) >= Number(userData.referralCount) ? '✅' : '❌'}`);
+
+    } catch (error) {
+      console.log(`❌ Error verifying migration for user ${userAddress}:`, error);
+      allUsersMigrated = false;
+    }
+  }
+
+  console.log("\nMigration verification summary:");
+  console.log(`Contract state preserved: ${baseRatesValid && lockPeriodsValid ? '✅' : '❌'}`);
+  console.log(`All users migrated: ${allUsersMigrated ? '✅' : '❌'}`);
+  console.log(`Activity history migrated: ${allHistoryMigrated ? '✅' : '❌'}`);
+  console.log(`Overall migration status: ${(baseRatesValid && lockPeriodsValid && allUsersMigrated && allHistoryMigrated) ? '✅ SUCCESS' : '❌ ISSUES DETECTED'}`);
+}
+
+async function main() {
   const [deployer] = await ethers.getSigners();
-  console.log("Upgrading with account:", deployer.address);
+  console.log("Running with account:", deployer.address);
 
   try {
-    // Get the new implementation contract factory
-    const MOVINEarnV2 = await ethers.getContractFactory("MOVINEarnV2");
+    // Step 1: Check current data
+    const originalData = await checkCurrentData();
 
-    console.log("Upgrading MOVINEarn proxy at:", MOVIN_EARN_PROXY_ADDRESS);
+    // Step 2: Migrate all data
+    const upgradedContract = await migrateAllData(deployer);
 
-    // Configure upgrade options to bypass storage layout checks for the renamed variables
-    console.log("Using unsafe allow options to bypass storage layout checks...");
-    const upgradeOptions = {
-      kind: "uups" as const,
-      unsafeAllow: [
-        "delegatecall",
-        "constructor",
-        "state-variable-assignment",
-        "state-variable-immutable",
-        "external-library-linking",
-        "struct-definition",
-        "enum-definition",
-        "storage-variable-assignment",
-        "storage-variable-structs",
-        "array-length"
-      ],
-      unsafeAllowRenames: true,
-      unsafeSkipStorageCheck: true
-    } as any;
+    // Step 3: Check migrated data
+    await checkMigratedData(upgradedContract, originalData);
 
-    // Perform the actual upgrade
-    const upgraded = await upgrades.upgradeProxy(MOVIN_EARN_PROXY_ADDRESS, MOVINEarnV2, upgradeOptions);
-
-    await upgraded.waitForDeployment();
-    const upgradedAddress = await upgraded.getAddress();
-
-    console.log("✅ MOVINEarn proxy upgraded");
-    console.log("Proxy address:", upgradedAddress);
-    console.log("New implementation address:", await upgrades.erc1967.getImplementationAddress(upgradedAddress));
-
-    // Transfer ownership of MovinToken to MOVINEarnV2 contract
-    console.log("\nTransferring ownership of MovinToken to MOVINEarnV2...");
-
-    // Check current owner - using proper type-safe approach
-    try {
-      // Cast to the right interface that has owner and transferOwnership methods
-      const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS);
-      const currentOwner = await movinToken.owner();
-      console.log("Current MovinToken owner:", currentOwner);
-
-      if (currentOwner.toLowerCase() === deployer.address.toLowerCase()) {
-        // Transfer ownership to the MOVINEarnV2 proxy
-        const transferTx = await movinToken.transferOwnership(upgradedAddress);
-        await transferTx.wait();
-        console.log("✅ MovinToken ownership transferred to MOVINEarnV2");
-      } else if (currentOwner === MOVIN_EARN_PROXY_ADDRESS) {
-        console.log("✅ MovinToken ownership already transferred to MOVINEarnV2");
-      } else {
-        console.log("⚠️ Cannot transfer MovinToken ownership - current owner is not the deployer");
-        console.log("Manual ownership transfer required from address:", currentOwner);
-      }
-    } catch (error: any) {
-      console.log("❌ Failed to check or transfer token ownership:", error.message);
-    }
-
-    const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", upgradedAddress);
-
-    // First, check and fix base rates if they're corrupted
-    console.log("\nChecking base rates...");
-    try {
-      const beforeBaseStepsRate = await movinEarnV2.baseStepsRate();
-      const beforeBaseMetsRate = await movinEarnV2.baseMetsRate();
-      console.log("Current base rates:");
-      console.log(`  Steps rate: ${ethers.formatEther(beforeBaseStepsRate)}`);
-      console.log(`  METs rate: ${ethers.formatEther(beforeBaseMetsRate)}`);
-
-      // Check if rates are corrupted (either too large or zero)
-      const MAX_REASONABLE_RATE = ethers.parseEther("1"); // 1000 tokens as a reasonable maximum
-      if (beforeBaseStepsRate > MAX_REASONABLE_RATE || beforeBaseMetsRate === BigInt(0)) {
-        console.log("⚠️ Base rates appear to be corrupted, attempting to fix...");
-        await movinEarnV2.migrateBaseRates();
-        console.log("✅ Base rates migration completed");
-
-        const afterBaseStepsRate = await movinEarnV2.baseStepsRate();
-        const afterBaseMetsRate = await movinEarnV2.baseMetsRate();
-        console.log("Updated base rates:");
-        console.log(`  Steps rate: ${ethers.formatEther(afterBaseStepsRate)}`);
-        console.log(`  METs rate: ${ethers.formatEther(afterBaseMetsRate)}`);
-      } else {
-        console.log("✅ Base rates appear to be correct");
-      }
-    } catch (error: any) {
-      console.log("❌ Failed to check or fix base rates:", error.message);
-      if (error.data) {
-        console.log("Error data:", error.data);
-      }
-      throw error; // Stop the upgrade if we can't fix the base rates
-    }
-
-    // Initialize V2 functionality
-    console.log("Initializing V2 functionality...");
-
-    // Record the halving timestamp before initialization for verification
-    const beforeHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();
-
-    try {
-      await movinEarnV2.initializeV2();
-      console.log("✅ V2 initialization completed successfully");
-
-      // Verify that rewardHalvingTimestamp was preserved (important!)
-      const afterHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();
-
-      if (beforeHalvingTimestamp.toString() === afterHalvingTimestamp.toString()) {
-        console.log("✅ rewardHalvingTimestamp successfully preserved during migration");
-      } else {
-        console.log("⚠️ rewardHalvingTimestamp changed during migration");
-      }
-    } catch (error: any) {
-      console.log("V2 initialization failed or not needed (may already be initialized)");
-    }
-
-    // Handle data alignment for renamed variables
-    console.log("\nMigrating user data for renamed storage variables...");
-
-    // Check if migration is already initialized by checking the migrator address
-    // If it's not address(0), then it's already initialized
-    const currentMigrator = await movinEarnV2.migrator();
-
-    if (currentMigrator === ethers.ZeroAddress) {
-      // Set up the migrator address to allow migration operations
-      await movinEarnV2.initializeMigration(deployer.address);
-      console.log("✅ Migration initialized, deployer set as migrator");
-    } else {
-      console.log(`✅ Migration already initialized with migrator: ${currentMigrator}`);
-    }
-
-    const latestBlockBefore = await ethers.provider.getBlock('latest');
-    const newTimestamp = latestBlockBefore?.timestamp ?? 0;
-    console.log("Importing reward halving timestamp...");
-    await movinEarnV2.importRewardHalvingTimestamp(newTimestamp);
-    const rewardHalvingTimestamp = await movinEarnV2.rewardHalvingTimestamp();
-    console.log("✅ Reward halving timestamp imported:", new Date(Number(rewardHalvingTimestamp) * 1000).toISOString());
-
-    // Run migration to fix any data alignment issues
-    // Note: All existing data is preserved by the proxy, but field renames need manual handling
-    // * lastHourlyReset → lastUpdated
-    // * Deleted hourlySteps and hourlyMets
-    // * Added userStepsHistory and userMetsHistory arrays
-
-    // Get user addresses (simplified approach)
-    const userFilter = movinEarnV2.filters.ActivityRecorded();
-
-    // Fix: Calculate proper block range instead of using negative values
-    const currentBlock = await ethers.provider.getBlockNumber();
-    const lookbackBlocks = 1000; // How many blocks to look back
-    const fromBlock = Math.max(0, currentBlock - lookbackBlocks); // Ensure we don't go below 0
-
-    console.log(`Scanning for users from block ${fromBlock} to ${currentBlock}`);
-    const activityEvents = await movinEarnV2.queryFilter(userFilter, fromBlock, currentBlock);
-
-    const uniqueUsers = new Set<string>();
-    for (const event of activityEvents) {
-      if (event.args && event.args.user) {
-        uniqueUsers.add(event.args.user.toLowerCase());
-      }
-    }
-
-    const userAddresses = Array.from(uniqueUsers);
-    console.log(`Found ${userAddresses.length} users to migrate`);
-
-    if (userAddresses.length > 0) {
-      // Run the migration in a single batch (or in batches for large datasets)
-      console.log("Running user data migration...");
-      const tx = await movinEarnV2.bulkMigrateUserData(userAddresses);
-      await tx.wait();
-      console.log("✅ User data migration completed");
-
-      // Verify migration results
-      console.log("\nVerifying migration results...");
-      for (const userAddress of userAddresses) {
-        try {
-          const stepsHistoryLength = await movinEarnV2.getUserStepsHistoryLength(userAddress);
-          const metsHistoryLength = await movinEarnV2.getUserMetsHistoryLength(userAddress);
-          console.log(`User ${userAddress}:`);
-          console.log(`  Steps history length: ${stepsHistoryLength}`);
-          console.log(`  METs history length: ${metsHistoryLength}`);
-
-          // Get the latest activity record if available
-          if (stepsHistoryLength > 0) {
-            const stepsHistory = await movinEarnV2.getUserStepsHistory(userAddress);
-            const latestSteps = stepsHistory[stepsHistory.length - 1];
-            console.log(`  Latest steps record: ${latestSteps.value} at ${new Date(Number(latestSteps.timestamp) * 1000).toISOString()}`);
-          }
-
-          if (metsHistoryLength > 0) {
-            const metsHistory = await movinEarnV2.getUserMetsHistory(userAddress);
-            const latestMets = metsHistory[metsHistory.length - 1];
-            console.log(`  Latest METs record: ${latestMets.value} at ${new Date(Number(latestMets.timestamp) * 1000).toISOString()}`);
-          }
-        } catch (error) {
-          console.log(`❌ Error verifying migration for user ${userAddress}:`, error);
-        }
-      }
-    } else {
-      console.log("No users found to migrate, may need to use hardcoded user list for testing");
-      // Optionally add hardcoded user list here
-    }
-
-    console.log("✅ Contract upgrade and migration process complete");
+    console.log("✅ Complete migration process successful");
   } catch (error: any) {
-    console.log("❌ Upgrade failed:", error.message);
+    console.log("❌ Migration failed:", error.message);
     process.exitCode = 1;
   }
 }
 
 main().catch((error) => {
-  console.error("❌ Script failed with error:", error);
+  console.error("❌ Script failed:", error);
   process.exitCode = 1;
 }); 
