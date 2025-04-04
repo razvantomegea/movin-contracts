@@ -321,7 +321,7 @@ contract MOVINEarnV2 is
     userStakes[msg.sender][stakeIndex].lastClaimed = block.timestamp;
 
     // Use _distributeTokens helper to mint tokens if needed
-    _distributeTokens(msg.sender, reward);
+    _distributeTokens(msg.sender, reward, false);
 
     emit StakingRewardsClaimed(msg.sender, stakeIndex, reward);
   }
@@ -359,7 +359,7 @@ contract MOVINEarnV2 is
     }
 
     // Distribute rewards using the helper function
-    _distributeTokens(msg.sender, totalReward);
+    _distributeTokens(msg.sender, totalReward, false);
 
     // Emit event
     emit AllStakingRewardsClaimed(msg.sender, totalReward, stakeCount);
@@ -549,18 +549,17 @@ contract MOVINEarnV2 is
   }
 
   // Add this helper function before claimRewards
-  function _distributeTokens(address to, uint256 amount) internal {
+  function _distributeTokens(address to, uint256 amount, bool shouldMint) internal {
     if (amount == 0) return;
 
     uint256 contractBalance = movinToken.balanceOf(address(this));
     uint256 remainingSupply = movinToken.MAX_SUPPLY() - movinToken.totalSupply();
+    bool canMint = remainingSupply >= amount && (shouldMint || contractBalance < amount);
 
-    if (contractBalance >= amount) {
-      // Transfer from contract balance
-      erc20MovinToken.transfer(to, amount);
-    } else if (remainingSupply >= amount) {
-      // We can mint new tokens
+    if (canMint) {
       movinToken.mint(to, amount);
+    } else if (contractBalance >= amount) {
+      erc20MovinToken.transfer(to, amount);
     } else {
       // If we can't mint and don't have enough balance, revert
       revert InsufficientBalance(contractBalance, amount);
@@ -598,7 +597,7 @@ contract MOVINEarnV2 is
     activity.dailyMets = 0;
 
     // Send full reward to user
-    _distributeTokens(msg.sender, totalReward);
+    _distributeTokens(msg.sender, totalReward, true);
 
     // Calculate and send referral bonus to referrer if exists
     address referrer = userReferrals[msg.sender].referrer;
@@ -608,7 +607,7 @@ contract MOVINEarnV2 is
 
       // Send referral bonus to referrer
       if (referralBonus > 0) {
-        _distributeTokens(referrer, referralBonus);
+        _distributeTokens(referrer, referralBonus, true);
 
         // Update referrer's earned bonus
         userReferrals[referrer].earnedBonus += referralBonus;
