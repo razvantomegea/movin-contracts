@@ -251,6 +251,25 @@ contract MOVINEarnV2 is
     return (activity.dailySteps, activity.dailyMets);
   }
 
+  function getBaseRates() public view returns (uint256 stepsRate, uint256 metsRate) {
+    uint256 currentMidnight = block.timestamp;
+    uint256 newStepsRate = baseStepsRate;
+    uint256 newMetsRate = baseMetsRate;
+
+    if (currentMidnight >= rewardHalvingTimestamp + 1 days) {
+      // Calculate number of days passed since last decrease
+      uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) / 86400;
+
+      // Apply 0.1% decrease for each day
+      for (uint256 i = 0; i < daysPassed; i++) {
+        newStepsRate = (newStepsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
+        newMetsRate = (newMetsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
+      }
+    }
+
+    return (newStepsRate, newMetsRate);
+  }
+
   // Combined getter for both rewards
   function getPendingRewards() public view returns (uint256 stepsReward, uint256 metsReward) {
     UserActivity memory activity = userActivities[msg.sender];
@@ -627,20 +646,12 @@ contract MOVINEarnV2 is
   }
 
   function _checkDailyDecrease() internal {
-    uint256 currentMidnight = block.timestamp;
+    (uint256 newStepsRate, uint256 newMetsRate) = getBaseRates();
 
-    if (currentMidnight >= rewardHalvingTimestamp + 1 days) {
-      // Calculate number of days passed since last decrease
-      uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) / 86400;
-
-      // Apply 0.1% decrease for each day
-      for (uint256 i = 0; i < daysPassed; i++) {
-        baseStepsRate = (baseStepsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
-        baseMetsRate = (baseMetsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
-      }
-
-      // Update the last decrease timestamp
-      rewardHalvingTimestamp = currentMidnight;
+    if (newStepsRate != baseStepsRate || newMetsRate != baseMetsRate) {
+      baseStepsRate = newStepsRate;
+      baseMetsRate = newMetsRate;
+      rewardHalvingTimestamp = block.timestamp;
 
       emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
     }
