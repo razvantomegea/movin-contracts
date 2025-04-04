@@ -318,14 +318,10 @@ contract MOVINEarnV2 is
     // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
     if (reward == 0 || reward < 0.001 ether) revert NoRewardsAvailable();
 
-    if (movinToken.balanceOf(address(this)) < reward) {
-      revert InsufficientBalance(movinToken.balanceOf(address(this)), reward);
-    }
-
     userStakes[msg.sender][stakeIndex].lastClaimed = block.timestamp;
 
-    // Transfer full reward to user (no burn)
-    erc20MovinToken.transfer(msg.sender, reward);
+    // Use _distributeTokens helper to mint tokens if needed
+    _distributeTokens(msg.sender, reward);
 
     emit StakingRewardsClaimed(msg.sender, stakeIndex, reward);
   }
@@ -559,12 +555,12 @@ contract MOVINEarnV2 is
     uint256 contractBalance = movinToken.balanceOf(address(this));
     uint256 remainingSupply = movinToken.MAX_SUPPLY() - movinToken.totalSupply();
 
-    if (remainingSupply >= amount) {
-      // We can mint new tokens
-      movinToken.mint(to, amount);
-    } else if (contractBalance >= amount) {
+    if (contractBalance >= amount) {
       // Transfer from contract balance
       erc20MovinToken.transfer(to, amount);
+    } else if (remainingSupply >= amount) {
+      // We can mint new tokens
+      movinToken.mint(to, amount);
     } else {
       // If we can't mint and don't have enough balance, revert
       revert InsufficientBalance(contractBalance, amount);

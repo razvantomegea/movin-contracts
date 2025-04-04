@@ -55,7 +55,6 @@ describe("MOVINEarnV2", function () {
     // Mint some tokens to users for testing
     await movinEarn.mintToken(user1.address, ONE_THOUSAND_TOKENS);
     await movinEarn.mintToken(user2.address, ONE_THOUSAND_TOKENS);
-    await movinEarn.mintToken(movinEarnAddress, ethers.parseEther("100000"));
   });
 
   describe("Initialization", function () {
@@ -168,7 +167,7 @@ describe("MOVINEarnV2", function () {
 
       // Claim rewards
       const tx = await movinEarn.connect(user1).claimStakingRewards(0);
-      const receipt = await tx.wait();
+      await tx.wait();
 
       // Verify balance increased for user1
       const balanceAfter = await movinToken.balanceOf(user1.address);
@@ -221,10 +220,16 @@ describe("MOVINEarnV2", function () {
 
       // Get user balance before claiming
       const balanceBefore = await movinToken.balanceOf(user1.address);
+      const movinEarnAddress = await movinEarn.getAddress();
+      await movinToken.transfer(movinEarnAddress, ethers.parseEther("100000"));
+      const contractBalanceBefore = await movinToken.balanceOf(movinEarnAddress);
 
       // Make sure rewards are claimed successfully
       const tx = await movinEarn.connect(user1).claimAllStakingRewards();
       await tx.wait();
+
+      const contractBalanceAfter = await movinToken.balanceOf(movinEarnAddress);
+      expect(contractBalanceAfter).to.be.lessThan(contractBalanceBefore);
 
       // Ensure all rewards are now zero
       let allRewardsZero = true;
