@@ -713,18 +713,27 @@ describe("MOVINEarnV2", function () {
       // Advance time by 24 hours and 1 hour to ensure we cross the hourly threshold
       await time.increase(25 * 60 * 60);
 
+      const newBaseRates = await movinEarn.getBaseRates();
+      const firstDayStepsRate = (initialStepsRate * halvingRateNumerator) / halvingRateDenominator;
+      const firstDayMetsRate = (initialMetsRate * halvingRateNumerator) / halvingRateDenominator;
+
+      expect(newBaseRates[0]).to.equal(firstDayStepsRate);
+      expect(newBaseRates[1]).to.equal(firstDayMetsRate);
+
+      // Advance time by 24 hours and 1 hour to ensure we cross the hourly threshold
+      await time.increase(25 * 60 * 60);
+
       // Trigger the decrease by recording activity
       await movinEarn.connect(user1).recordActivity(1000, 1);
 
-      // Check that rates were decreased by 0.1%
-      const newStepsRate = await movinEarn.baseStepsRate();
-      const newMetsRate = await movinEarn.baseMetsRate();
+      // Check that rates were decreased by 0.2% compounded for 2 days
+      const newBaseRates2 = await movinEarn.getBaseRates();
 
-      const expectedStepsRate = (initialStepsRate * halvingRateNumerator) / halvingRateDenominator;
-      const expectedMetsRate = (initialMetsRate * halvingRateNumerator) / halvingRateDenominator;
+      const expectedStepsRate = (firstDayStepsRate * halvingRateNumerator) / halvingRateDenominator;
+      const expectedMetsRate = (firstDayMetsRate * halvingRateNumerator) / halvingRateDenominator;
 
-      expect(newStepsRate).to.equal(expectedStepsRate);
-      expect(newMetsRate).to.equal(expectedMetsRate);
+      expect(newBaseRates2[0]).to.equal(expectedStepsRate);
+      expect(newBaseRates2[1]).to.equal(expectedMetsRate);
     });
 
     it("Should apply multiple days of decrease when time passes", async function () {
