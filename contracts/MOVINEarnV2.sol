@@ -283,6 +283,11 @@ contract MOVINEarnV2 is
     if (amount == 0) revert ZeroAmountNotAllowed();
     if (lockPeriodMultipliers[lockMonths] == 0) revert InvalidLockPeriod(lockMonths);
 
+    // Premium check for 24-month staking
+    if (lockMonths == 24 && !userActivities[msg.sender].isPremium) {
+      revert UnauthorizedAccess();
+    }
+
     uint256 userBalance = movinToken.balanceOf(msg.sender);
     if (userBalance < amount) revert InsufficientBalance(userBalance, amount);
 

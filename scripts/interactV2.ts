@@ -67,6 +67,9 @@ async function main() {
   console.log('\n--- 👑 TESTING PREMIUM USER FEATURES AND REWARDS ---');
   await testPremiumUserFeatures(movinEarnV2, movinToken, owner, user1, user2);
 
+  // Test premium-only staking
+  await testPremiumOnlyStaking(movinEarnV2, movinToken, owner, user1, user2);
+
   console.log('\n✅ All tests completed successfully!');
 }
 
@@ -887,6 +890,87 @@ async function testPremiumUserFeatures(
   console.log('✅ User1 premium status after removal:', isPremiumAfterRemoval);
 
   console.log('✅ Premium user features and rewards test complete\n');
+}
+
+async function testPremiumOnlyStaking(
+  movinEarnV2: any,
+  movinToken: any,
+  owner: any,
+  premiumUser: any,
+  nonPremiumUser: any
+) {
+  console.log('\n--- 🔒 TESTING PREMIUM-ONLY 24 MONTH STAKING ---');
+  try {
+    // Ensure premium status is correctly set
+    await movinEarnV2.connect(owner).setPremiumStatus(premiumUser.address, true);
+    await movinEarnV2.connect(owner).setPremiumStatus(nonPremiumUser.address, false);
+
+    // Verify premium status
+    const isPremium1 = await movinEarnV2.getIsPremiumUser(premiumUser.address);
+    const isPremium2 = await movinEarnV2.getIsPremiumUser(nonPremiumUser.address);
+    console.log(`Premium user status: ${isPremium1}`);
+    console.log(`Non-premium user status: ${isPremium2}`);
+
+    // Ensure users have enough tokens
+    const mintAmount = ethers.parseEther('1000');
+    await movinEarnV2.connect(owner).mintToken(premiumUser.address, mintAmount);
+    await movinEarnV2.connect(owner).mintToken(nonPremiumUser.address, mintAmount);
+    console.log(`✅ Minted ${ethers.formatEther(mintAmount)} tokens to both users`);
+
+    // Approve tokens for staking
+    await movinToken.connect(premiumUser).approve(movinEarnV2.getAddress(), mintAmount);
+    await movinToken.connect(nonPremiumUser).approve(movinEarnV2.getAddress(), mintAmount);
+    console.log('✅ Approved tokens for staking');
+
+    // Test: Non-premium user attempts to stake for 24 months (should fail)
+    console.log('\nTesting non-premium user staking for 24 months (should fail):');
+    try {
+      await movinEarnV2.connect(nonPremiumUser).stakeTokens(ethers.parseEther('100'), 24);
+      console.log('❌ Test failed: Non-premium user was able to stake for 24 months');
+    } catch (error: any) {
+      console.log(`✅ Test passed: Non-premium user was prevented from staking for 24 months`);
+      console.log(`   Error: ${error.message.split('\n')[0]}`);
+    }
+
+    // Test: Premium user attempts to stake for 24 months (should succeed)
+    console.log('\nTesting premium user staking for 24 months (should succeed):');
+    try {
+      await movinEarnV2.connect(premiumUser).stakeTokens(ethers.parseEther('100'), 24);
+      console.log('✅ Test passed: Premium user successfully staked for 24 months');
+
+      // Verify the stake was created with the correct lock period
+      const stakes = await movinEarnV2.getUserStakes(premiumUser.address);
+      const lastStakeIndex = stakes.length - 1;
+      if (lastStakeIndex >= 0) {
+        const lastStake = stakes[lastStakeIndex];
+        const lockPeriodInDays = Number(lastStake.lockDuration) / 86400; // convert seconds to days
+        const lockPeriodInMonths = Math.round(lockPeriodInDays / 30);
+        console.log(`✅ Verified stake with lock period of ${lockPeriodInMonths} months`);
+        if (lockPeriodInMonths === 24) {
+          console.log('✅ Lock period correctly set to 24 months');
+        } else {
+          console.log(`❌ Lock period incorrect: ${lockPeriodInMonths} instead of 24 months`);
+        }
+      }
+    } catch (error: any) {
+      console.log(`❌ Test failed: Premium user couldn't stake for 24 months`);
+      console.log(`   Error: ${error.message.split('\n')[0]}`);
+    }
+
+    // Test: Non-premium user staking for 12 months (should succeed)
+    console.log('\nTesting non-premium user staking for 12 months (should succeed):');
+    try {
+      await movinEarnV2.connect(nonPremiumUser).stakeTokens(ethers.parseEther('100'), 12);
+      console.log('✅ Test passed: Non-premium user successfully staked for 12 months');
+    } catch (error: any) {
+      console.log(`❌ Test failed: Non-premium user couldn't stake for 12 months`);
+      console.log(`   Error: ${error.message.split('\n')[0]}`);
+    }
+
+    console.log('\n✅ Premium-only staking tests completed successfully');
+  } catch (error) {
+    console.error('❌ Error testing premium-only staking:', error);
+  }
 }
 
 main().catch(error => {

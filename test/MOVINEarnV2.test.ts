@@ -1,10 +1,10 @@
-import { expect } from "chai";
-import { ethers, upgrades } from "hardhat";
-import { MOVINEarnV2, MovinToken } from "../typechain-types";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { expect } from 'chai';
+import { ethers, upgrades } from 'hardhat';
+import { MOVINEarnV2, MovinToken } from '../typechain-types';
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { time } from '@nomicfoundation/hardhat-network-helpers';
 
-describe("MOVINEarnV2", function () {
+describe('MOVINEarnV2', function () {
   let movinToken: MovinToken;
   let movinEarn: MOVINEarnV2;
   let owner: HardhatEthersSigner;
@@ -19,7 +19,7 @@ describe("MOVINEarnV2", function () {
   const MAX_DAILY_METS = 500;
   const MAX_STEPS_PER_MINUTE = 300;
   const MAX_METS_PER_MINUTE = 5;
-  const ONE_THOUSAND_TOKENS = ethers.parseEther("1000");
+  const ONE_THOUSAND_TOKENS = ethers.parseEther('1000');
   const UNSTAKE_BURN_FEES_PERCENT = 1;
   const ACTIVITY_REFERRAL_BONUS_PERCENT = 100; // 100 = 1% (using basis points for better precision)
   const ONE_DAY = 24 * 60 * 60;
@@ -31,21 +31,19 @@ describe("MOVINEarnV2", function () {
     [owner, user1, user2, migrator] = await ethers.getSigners();
 
     // Deploy MovinToken
-    const MovinToken = await ethers.getContractFactory("MovinToken");
-    movinToken = await upgrades.deployProxy(
-      MovinToken,
-      [owner.address],
-      { kind: "uups", initializer: "initialize" }
-    ) as unknown as MovinToken;
+    const MovinToken = await ethers.getContractFactory('MovinToken');
+    movinToken = (await upgrades.deployProxy(MovinToken, [owner.address], {
+      kind: 'uups',
+      initializer: 'initialize',
+    })) as unknown as MovinToken;
     await movinToken.waitForDeployment();
 
     // Deploy MOVINEarnV2
-    const MOVINEarnV2 = await ethers.getContractFactory("MOVINEarnV2");
-    movinEarn = await upgrades.deployProxy(
-      MOVINEarnV2,
-      [await movinToken.getAddress()],
-      { kind: "uups", initializer: "initialize" }
-    ) as unknown as MOVINEarnV2;
+    const MOVINEarnV2 = await ethers.getContractFactory('MOVINEarnV2');
+    movinEarn = (await upgrades.deployProxy(MOVINEarnV2, [await movinToken.getAddress()], {
+      kind: 'uups',
+      initializer: 'initialize',
+    })) as unknown as MOVINEarnV2;
     await movinEarn.waitForDeployment();
 
     const movinEarnAddress = await movinEarn.getAddress();
@@ -57,8 +55,8 @@ describe("MOVINEarnV2", function () {
     await movinEarn.mintToken(user2.address, ONE_THOUSAND_TOKENS);
   });
 
-  describe("Initialization", function () {
-    it("Should initialize with correct values", async function () {
+  describe('Initialization', function () {
+    it('Should initialize with correct values', async function () {
       expect(await movinEarn.movinToken()).to.equal(await movinToken.getAddress());
       expect(await movinEarn.owner()).to.equal(owner.address);
 
@@ -70,19 +68,22 @@ describe("MOVINEarnV2", function () {
       expect(await movinEarn.lockPeriodMultipliers(24)).to.equal(24);
 
       // Check reward rates
-      expect(await movinEarn.baseStepsRate()).to.equal(ethers.parseEther("1"));
-      expect(await movinEarn.baseMetsRate()).to.equal(ethers.parseEther("1"));
+      expect(await movinEarn.baseStepsRate()).to.equal(ethers.parseEther('1'));
+      expect(await movinEarn.baseMetsRate()).to.equal(ethers.parseEther('1'));
     });
   });
 
-  describe("Staking functionality", function () {
+  describe('Staking functionality', function () {
     beforeEach(async function () {
       // Approve MOVINEarnV2 to spend user1's tokens
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
     });
 
-    it("Should allow staking tokens with various lock periods", async function () {
-      const stakeAmount = ethers.parseEther("100");
+    it('Should allow staking tokens with various lock periods', async function () {
+      const stakeAmount = ethers.parseEther('100');
+
+      // Set user1 as premium to allow staking for 24 months
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
       // Test each valid lock period
       const lockPeriods = [1, 3, 6, 12, 24];
@@ -103,21 +104,46 @@ describe("MOVINEarnV2", function () {
       expect(await movinEarn.connect(user1).getUserStakeCount()).to.equal(lockPeriods.length);
     });
 
-    it("Should fail when staking with invalid lock period", async function () {
-      const stakeAmount = ethers.parseEther("100");
+    it('Should fail when staking with invalid lock period', async function () {
+      const stakeAmount = ethers.parseEther('100');
 
       // Try to stake with invalid lock period
-      await expect(movinEarn.connect(user1).stakeTokens(stakeAmount, 2))
-        .to.be.revertedWithCustomError(movinEarn, "InvalidLockPeriod");
+      await expect(
+        movinEarn.connect(user1).stakeTokens(stakeAmount, 2)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidLockPeriod');
     });
 
-    it("Should fail when staking zero amount", async function () {
-      await expect(movinEarn.connect(user1).stakeTokens(0, 1))
-        .to.be.revertedWithCustomError(movinEarn, "ZeroAmountNotAllowed");
+    it('Should fail when staking zero amount', async function () {
+      await expect(movinEarn.connect(user1).stakeTokens(0, 1)).to.be.revertedWithCustomError(
+        movinEarn,
+        'ZeroAmountNotAllowed'
+      );
     });
 
-    it("Should calculate staking rewards correctly", async function () {
-      const stakeAmount = ethers.parseEther("1000");
+    it('Should only allow premium users to stake for 24 months', async function () {
+      const stakeAmount = ethers.parseEther('100');
+
+      // Set user1 as premium and user2 as non-premium
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      await movinEarn.connect(owner).setPremiumStatus(user2.address, false);
+
+      // Approve tokens for both users
+      await movinToken.connect(user2).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+
+      // Premium user should be able to stake for 24 months
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, 24);
+
+      // Non-premium user should not be able to stake for 24 months
+      await expect(
+        movinEarn.connect(user2).stakeTokens(stakeAmount, 24)
+      ).to.be.revertedWithCustomError(movinEarn, 'UnauthorizedAccess');
+
+      // Non-premium user should still be able to stake for other periods
+      await movinEarn.connect(user2).stakeTokens(stakeAmount, 12);
+    });
+
+    it('Should calculate staking rewards correctly', async function () {
+      const stakeAmount = ethers.parseEther('1000');
       const lockPeriod = 12; // 12 months, which has a multiplier of 12
 
       // Stake tokens
@@ -129,22 +155,21 @@ describe("MOVINEarnV2", function () {
       // Calculate expected reward
       // Formula: (amount * apr * effectiveDuration) / (100 * 365 days)
       const apr = 12; // Multiplier for 12 months
-      const expectedReward = (stakeAmount * BigInt(apr) * BigInt(THIRTY_DAYS)) /
-        (BigInt(100) * BigInt(ONE_YEAR));
+      const expectedReward =
+        (stakeAmount * BigInt(apr) * BigInt(THIRTY_DAYS)) / (BigInt(100) * BigInt(ONE_YEAR));
 
       // Get calculated reward from contract
       const reward = await movinEarn.connect(user1).calculateStakingReward(0);
 
       // Allow for small rounding difference due to timestamp variations
-      const difference = expectedReward > reward ?
-        expectedReward - reward :
-        reward - expectedReward;
+      const difference =
+        expectedReward > reward ? expectedReward - reward : reward - expectedReward;
 
       expect(Number(ethers.formatEther(difference))).to.be.lessThan(0.01);
     });
 
-    it("Should allow claiming staking rewards without referral bonus", async function () {
-      const stakeAmount = ethers.parseEther("1000");
+    it('Should allow claiming staking rewards without referral bonus', async function () {
+      const stakeAmount = ethers.parseEther('1000');
       const lockPeriod = 12; // 12 months
 
       // Setup referral relationship
@@ -177,26 +202,28 @@ describe("MOVINEarnV2", function () {
       const referrerBalanceAfter = await movinToken.balanceOf(user2.address);
 
       // Use tolerance comparison instead of exact equality
-      const rewardDifference = expectedUserReward > actualReward ?
-        expectedUserReward - actualReward :
-        actualReward - expectedUserReward;
+      const rewardDifference =
+        expectedUserReward > actualReward
+          ? expectedUserReward - actualReward
+          : actualReward - expectedUserReward;
 
       expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
       expect(referrerBalanceAfter).to.equal(referrerBalanceBefore);
     });
 
-    it("Should allow claiming rewards from all stakes at once using claimAllStakingRewards", async function () {
+    it('Should allow claiming rewards from all stakes at once using claimAllStakingRewards', async function () {
       // Mint enough tokens for staking
-      await movinEarn.mintToken(user1.address, ethers.parseEther("10000"));
+      await movinEarn.mintToken(user1.address, ethers.parseEther('10000'));
 
       // Create multiple stakes with different lock periods
-      const stake1Amount = ethers.parseEther("1000");
-      const stake2Amount = ethers.parseEther("1500");
-      const stake3Amount = ethers.parseEther("2000");
+      const stake1Amount = ethers.parseEther('1000');
+      const stake2Amount = ethers.parseEther('1500');
+      const stake3Amount = ethers.parseEther('2000');
 
       // Approve tokens for staking
-      await movinToken.connect(user1).approve(await movinEarn.getAddress(),
-        stake1Amount + stake2Amount + stake3Amount);
+      await movinToken
+        .connect(user1)
+        .approve(await movinEarn.getAddress(), stake1Amount + stake2Amount + stake3Amount);
 
       // Create 3 different stakes
       await movinEarn.connect(user1).stakeTokens(stake1Amount, 1); // 1 month
@@ -221,7 +248,7 @@ describe("MOVINEarnV2", function () {
       // Get user balance before claiming
       const balanceBefore = await movinToken.balanceOf(user1.address);
       const movinEarnAddress = await movinEarn.getAddress();
-      await movinToken.transfer(movinEarnAddress, ethers.parseEther("100000"));
+      await movinToken.transfer(movinEarnAddress, ethers.parseEther('100000'));
       const contractBalanceBefore = await movinToken.balanceOf(movinEarnAddress);
 
       // Make sure rewards are claimed successfully
@@ -247,15 +274,16 @@ describe("MOVINEarnV2", function () {
       const actualReward = balanceAfter - balanceBefore;
 
       // Use tolerance comparison instead of exact equality
-      const rewardDifference = expectedUserReward > actualReward ?
-        expectedUserReward - actualReward :
-        actualReward - expectedUserReward;
+      const rewardDifference =
+        expectedUserReward > actualReward
+          ? expectedUserReward - actualReward
+          : actualReward - expectedUserReward;
 
       expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
     });
 
-    it("Should allow unstaking after lock period", async function () {
-      const stakeAmount = ethers.parseEther("1000");
+    it('Should allow unstaking after lock period', async function () {
+      const stakeAmount = ethers.parseEther('1000');
       const lockPeriod = 1; // 1 month
 
       // Stake tokens
@@ -285,13 +313,13 @@ describe("MOVINEarnV2", function () {
     });
   });
 
-  describe("Activity recording and rewards", function () {
+  describe('Activity recording and rewards', function () {
     beforeEach(async function () {
       // Set user1 as premium
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
     });
 
-    it("Should record activity correctly", async function () {
+    it('Should record activity correctly', async function () {
       const steps = 8000;
       const mets = 5;
 
@@ -304,11 +332,11 @@ describe("MOVINEarnV2", function () {
       expect(recordedMets).to.equal(mets);
     });
 
-    it("Should accumulate activity correctly", async function () {
+    it('Should accumulate activity correctly', async function () {
       // Record activity in parts (within time-based limits)
       const [latestBlock] = await Promise.all([
-        ethers.provider.getBlock("latest"),
-        await movinEarn.connect(user1).recordActivity(300, 3)
+        ethers.provider.getBlock('latest'),
+        await movinEarn.connect(user1).recordActivity(300, 3),
       ]);
 
       let activity = await movinEarn.userActivities(user1.address);
@@ -336,7 +364,7 @@ describe("MOVINEarnV2", function () {
       expect(recordedMets).to.equal(16); // 3 + 4 + 4 + 5
     });
 
-    it("Should check rewards can be claimed with referral bonus", async function () {
+    it('Should check rewards can be claimed with referral bonus', async function () {
       // Set up a referral relationship
       await movinEarn.connect(user2).registerReferral(user1.address);
 
@@ -368,7 +396,7 @@ describe("MOVINEarnV2", function () {
       expect(user2BalanceAfter - user2BalanceBefore).to.equal(totalReward);
     });
 
-    it("Should not apply referral bonus when claiming rewards if user has no referrer", async function () {
+    it('Should not apply referral bonus when claiming rewards if user has no referrer', async function () {
       // Set user1 as premium
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -396,7 +424,7 @@ describe("MOVINEarnV2", function () {
       expect(actualReward).to.equal(expectedReward);
     });
 
-    it("Should reset daily activity counts after claiming rewards", async function () {
+    it('Should reset daily activity counts after claiming rewards', async function () {
       // Set user as premium to test both steps and METs
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -406,25 +434,31 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(user1).recordActivity(steps, mets);
 
       // Verify activity was recorded
-      const [recordedStepsBefore, recordedMetsBefore] = await movinEarn.connect(user1).getUserActivity();
+      const [recordedStepsBefore, recordedMetsBefore] = await movinEarn
+        .connect(user1)
+        .getUserActivity();
       expect(recordedStepsBefore).to.equal(steps);
       expect(recordedMetsBefore).to.equal(mets);
 
       // Get pending rewards to confirm we have something to claim
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
-      expect(pendingStepsReward).to.equal(ethers.parseEther("1"));
-      expect(pendingMetsReward).to.equal(ethers.parseEther("1"));
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(pendingStepsReward).to.equal(ethers.parseEther('1'));
+      expect(pendingMetsReward).to.equal(ethers.parseEther('1'));
 
       // Claim rewards
       await movinEarn.connect(user1).claimRewards();
 
       // Verify activity counts were reset to 0
-      const [recordedStepsAfter, recordedMetsAfter] = await movinEarn.connect(user1).getUserActivity();
+      const [recordedStepsAfter, recordedMetsAfter] = await movinEarn
+        .connect(user1)
+        .getUserActivity();
       expect(recordedStepsAfter).to.equal(0);
       expect(recordedMetsAfter).to.equal(0);
     });
 
-    it("Should reset daily activity counts on day of year change", async function () {
+    it('Should reset daily activity counts on day of year change', async function () {
       // Record initial activity
       await movinEarn.connect(user1).recordActivity(5000, 5);
 
@@ -434,12 +468,12 @@ describe("MOVINEarnV2", function () {
       expect(initialMets).to.equal(5);
 
       // Get current timestamp for calculation
-      const latestBlock = await ethers.provider.getBlock("latest");
+      const latestBlock = await ethers.provider.getBlock('latest');
       const currentTimestamp = latestBlock ? latestBlock.timestamp : 0;
 
       // Calculate time to next day of year
       const secondsInDay = 24 * 60 * 60;
-      const currentDayOfYear = Math.floor(currentTimestamp / secondsInDay) % 365 + 1;
+      const currentDayOfYear = (Math.floor(currentTimestamp / secondsInDay) % 365) + 1;
       const nextDayOfYear = currentDayOfYear + 1;
       const timeToAdvance = nextDayOfYear * secondsInDay;
 
@@ -464,7 +498,7 @@ describe("MOVINEarnV2", function () {
       expect(newDayMets).to.equal(3);
     });
 
-    it("Should reset daily activity counts when crossing midnight", async function () {
+    it('Should reset daily activity counts when crossing midnight', async function () {
       // Record initial activity at 11:00 PM
       await movinEarn.connect(user1).recordActivity(5000, 5);
 
@@ -474,7 +508,7 @@ describe("MOVINEarnV2", function () {
       expect(initialMets).to.equal(5);
 
       // Get current timestamp
-      const latestBlock = await ethers.provider.getBlock("latest");
+      const latestBlock = await ethers.provider.getBlock('latest');
       const currentTimestamp = latestBlock ? latestBlock.timestamp : 0;
 
       // Calculate time to midnight (next day)
@@ -506,7 +540,7 @@ describe("MOVINEarnV2", function () {
       expect(newDayMets).to.equal(3);
     });
 
-    it("Should not allow accumulating more than daily limits across multiple calls", async function () {
+    it('Should not allow accumulating more than daily limits across multiple calls', async function () {
       // Set user as premium to test both steps and METs
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -560,17 +594,20 @@ describe("MOVINEarnV2", function () {
       expect(metsAfterFourth).to.equal(36); // 27 + 9
 
       // Check pending rewards
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
-      expect(pendingStepsReward).to.equal(ethers.parseEther("2.97")); // 1 MVN per 10000 steps
-      expect(pendingMetsReward).to.equal(ethers.parseEther("3.6")); // 1 MVN per 10 mets
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(pendingStepsReward).to.equal(ethers.parseEther('2.97')); // 1 MVN per 10000 steps
+      expect(pendingMetsReward).to.equal(ethers.parseEther('3.6')); // 1 MVN per 10 mets
 
       // Advance time to next day of year
       const secondsInDay = 24 * 60 * 60;
-      const latestBlock = await ethers.provider.getBlock("latest");
+      const latestBlock = await ethers.provider.getBlock('latest');
       const currentTimestamp = latestBlock ? latestBlock.timestamp : 0;
-      const currentDayOfYear = Math.floor(currentTimestamp / secondsInDay) % 365 + 1;
+      const currentDayOfYear = (Math.floor(currentTimestamp / secondsInDay) % 365) + 1;
       const nextDayOfYear = (currentDayOfYear % 365) + 1;
-      const daysToAdvance = (nextDayOfYear > currentDayOfYear) ? 1 : 366 - currentDayOfYear + nextDayOfYear;
+      const daysToAdvance =
+        nextDayOfYear > currentDayOfYear ? 1 : 366 - currentDayOfYear + nextDayOfYear;
       const timeToAdvance = daysToAdvance * secondsInDay;
 
       // Advance time to next day
@@ -585,7 +622,7 @@ describe("MOVINEarnV2", function () {
       expect(metsNewDay).to.equal(9);
     });
 
-    it("Should enforce per-minute rate limits for steps and METs", async function () {
+    it('Should enforce per-minute rate limits for steps and METs', async function () {
       // Set user as premium
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -593,8 +630,9 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(user1).recordActivity(MAX_STEPS_PER_MINUTE, MAX_METS_PER_MINUTE);
 
       // Try to record activity exceeding per-minute limits
-      await expect(movinEarn.connect(user1).recordActivity(MAX_STEPS_PER_MINUTE + 100, MAX_METS_PER_MINUTE + 1))
-        .to.be.revertedWithCustomError(movinEarn, "InvalidActivityInput");
+      await expect(
+        movinEarn.connect(user1).recordActivity(MAX_STEPS_PER_MINUTE + 100, MAX_METS_PER_MINUTE + 1)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidActivityInput');
 
       // Verify recorded activity
       const [steps, mets] = await movinEarn.connect(user1).getUserActivity();
@@ -605,8 +643,10 @@ describe("MOVINEarnV2", function () {
       await time.increase(30); // 30 seconds
 
       // Try to record more activity immediately (should fail)
-      await expect(movinEarn.connect(user1).recordActivity(100, 1))
-        .to.be.revertedWithCustomError(movinEarn, "InvalidActivityInput");
+      await expect(movinEarn.connect(user1).recordActivity(100, 1)).to.be.revertedWithCustomError(
+        movinEarn,
+        'InvalidActivityInput'
+      );
 
       // Wait for a full minute
       await time.increase(30); // Another 30 seconds to complete the minute
@@ -620,7 +660,7 @@ describe("MOVINEarnV2", function () {
       expect(accumulatedMets).to.equal(MAX_METS_PER_MINUTE * 2);
     });
 
-    it("Should enforce daily METs limit", async function () {
+    it('Should enforce daily METs limit', async function () {
       // Set user as premium
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -647,9 +687,11 @@ describe("MOVINEarnV2", function () {
       expect(metsAfterExceed).to.equal(MAX_DAILY_METS + 1);
 
       // Check that rewards continue to accumulate beyond daily limit
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
       expect(pendingStepsReward).to.equal(0);
-      expect(pendingMetsReward).to.equal(ethers.parseEther("50")); // 501 METs = 50.1 MVN (1 MVN per 10 METs)
+      expect(pendingMetsReward).to.equal(ethers.parseEther('50')); // 501 METs = 50.1 MVN (1 MVN per 10 METs)
 
       // Advance time to next day
       await time.increase(24 * 60 * 60);
@@ -662,20 +704,24 @@ describe("MOVINEarnV2", function () {
       expect(metsNewDay).to.equal(1);
 
       // Verify rewards persist from previous day
-      const [newPendingStepsReward, newPendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      const [newPendingStepsReward, newPendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
       expect(newPendingStepsReward).to.equal(0);
-      expect(newPendingMetsReward).to.equal(ethers.parseEther("50")); // Rewards should persist
+      expect(newPendingMetsReward).to.equal(ethers.parseEther('50')); // Rewards should persist
 
       // Claim rewards
       await movinEarn.connect(user1).claimRewards();
 
       // Verify rewards were reset after claiming
-      const [finalPendingStepsReward, finalPendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      const [finalPendingStepsReward, finalPendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
       expect(finalPendingStepsReward).to.equal(0);
       expect(finalPendingMetsReward).to.equal(0);
     });
 
-    it("Should validate the lastUpdated field is set during activity recording", async function () {
+    it('Should validate the lastUpdated field is set during activity recording', async function () {
       // Record initial activity
       await movinEarn.connect(user1).recordActivity(100, 0);
 
@@ -686,7 +732,7 @@ describe("MOVINEarnV2", function () {
       expect(activityData.lastUpdated).to.not.equal(0);
 
       // Get current block timestamp
-      const block = await ethers.provider.getBlock("latest");
+      const block = await ethers.provider.getBlock('latest');
       const currentTimestamp = block ? block.timestamp : 0;
 
       // Verify lastUpdated is approximately the current timestamp
@@ -702,16 +748,18 @@ describe("MOVINEarnV2", function () {
       const updatedActivityData = await movinEarn.userActivities(user1.address);
 
       // Verify lastUpdated is updated
-      expect(Number(updatedActivityData.lastUpdated)).to.be.greaterThan(Number(activityData.lastUpdated));
+      expect(Number(updatedActivityData.lastUpdated)).to.be.greaterThan(
+        Number(activityData.lastUpdated)
+      );
     });
   });
 
-  describe("Daily reward rate decrease", function () {
-    it("Should decrease rewards rate by 0.1% each day", async function () {
+  describe('Daily reward rate decrease', function () {
+    it('Should decrease rewards rate by 0.1% each day', async function () {
       const initialStepsRate = await movinEarn.baseStepsRate();
       const initialMetsRate = await movinEarn.baseMetsRate();
 
-      // Get halving rate constants from contract 
+      // Get halving rate constants from contract
       const halvingRateNumerator = BigInt(999);
       const halvingRateDenominator = BigInt(1000);
 
@@ -741,7 +789,7 @@ describe("MOVINEarnV2", function () {
       expect(newBaseRates2[1]).to.equal(expectedMetsRate);
     });
 
-    it("Should apply multiple days of decrease when time passes", async function () {
+    it('Should apply multiple days of decrease when time passes', async function () {
       const initialStepsRate = await movinEarn.baseStepsRate();
 
       // Get halving rate constants from contract
@@ -765,12 +813,12 @@ describe("MOVINEarnV2", function () {
       expect(newStepsRate).to.equal(expectedStepsRate);
     });
 
-    it("Should not decrease rates if less than 24 hours have passed", async function () {
+    it('Should not decrease rates if less than 24 hours have passed', async function () {
       const initialStepsRate = await movinEarn.baseStepsRate();
       const initialMetsRate = await movinEarn.baseMetsRate();
 
-      expect(initialStepsRate).to.equal(ethers.parseEther("1"));
-      expect(initialMetsRate).to.equal(ethers.parseEther("1"));
+      expect(initialStepsRate).to.equal(ethers.parseEther('1'));
+      expect(initialMetsRate).to.equal(ethers.parseEther('1'));
 
       // Advance time by 23 hours (less than 24 hours)
       await time.increase(23 * 60 * 60);
@@ -794,10 +842,10 @@ describe("MOVINEarnV2", function () {
     });
   });
 
-  describe("Referral system", function () {
-    it("Should allow users to register referrals", async function () {
+  describe('Referral system', function () {
+    it('Should allow users to register referrals', async function () {
       await expect(movinEarn.connect(user2).registerReferral(user1.address))
-        .to.emit(movinEarn, "ReferralRegistered")
+        .to.emit(movinEarn, 'ReferralRegistered')
         .withArgs(user2.address, user1.address);
 
       // Check referral info for user2 (the referee)
@@ -807,24 +855,28 @@ describe("MOVINEarnV2", function () {
       expect(referralCount).to.equal(0); // user2 has no referrals yet
 
       // Check referral info for user1 (the referrer)
-      const [referrer1, earnedBonus1, referralCount1] = await movinEarn.getReferralInfo(user1.address);
-      expect(referrer1).to.equal("0x0000000000000000000000000000000000000000");
+      const [referrer1, earnedBonus1, referralCount1] = await movinEarn.getReferralInfo(
+        user1.address
+      );
+      expect(referrer1).to.equal('0x0000000000000000000000000000000000000000');
       expect(earnedBonus1).to.equal(0);
       expect(referralCount1).to.equal(1); // user1 has 1 referral (user2)
     });
 
-    it("Should prevent self-referral", async function () {
-      await expect(movinEarn.connect(user1).registerReferral(user1.address))
-        .to.be.revertedWithCustomError(movinEarn, "InvalidReferrer");
+    it('Should prevent self-referral', async function () {
+      await expect(
+        movinEarn.connect(user1).registerReferral(user1.address)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidReferrer');
     });
 
-    it("Should prevent registering a referral twice", async function () {
+    it('Should prevent registering a referral twice', async function () {
       await movinEarn.connect(user2).registerReferral(user1.address);
-      await expect(movinEarn.connect(user2).registerReferral(user1.address))
-        .to.be.revertedWithCustomError(movinEarn, "AlreadyReferred");
+      await expect(
+        movinEarn.connect(user2).registerReferral(user1.address)
+      ).to.be.revertedWithCustomError(movinEarn, 'AlreadyReferred');
     });
 
-    it("Should track referrals correctly", async function () {
+    it('Should track referrals correctly', async function () {
       await movinEarn.connect(user2).registerReferral(user1.address);
 
       // Check user1's referrals
@@ -833,7 +885,7 @@ describe("MOVINEarnV2", function () {
       expect(referrals[0]).to.equal(user2.address);
     });
 
-    it("Should allow users to refer multiple people", async function () {
+    it('Should allow users to refer multiple people', async function () {
       // Create additional test users
       const [owner, user1, user2, user3, user4] = await ethers.getSigners();
 
@@ -850,7 +902,9 @@ describe("MOVINEarnV2", function () {
       expect(referrals).to.include(user4.address);
 
       // Verify referral count for user1
-      const [referrer1, earnedBonus1, referralCount] = await movinEarn.getReferralInfo(user1.address);
+      const [referrer1, earnedBonus1, referralCount] = await movinEarn.getReferralInfo(
+        user1.address
+      );
       expect(referralCount).to.equal(3);
 
       // Verify each referee has user1 as their referrer
@@ -865,20 +919,22 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(owner).setPremiumStatus(user2.address, true);
       await movinEarn.connect(user2).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
 
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user2).getPendingRewards();
-      expect(pendingStepsReward).to.equal(ethers.parseEther("1"));
-      expect(pendingMetsReward).to.equal(ethers.parseEther("1"));
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user2)
+        .getPendingRewards();
+      expect(pendingStepsReward).to.equal(ethers.parseEther('1'));
+      expect(pendingMetsReward).to.equal(ethers.parseEther('1'));
 
       await movinEarn.connect(user2).claimRewards();
 
       // Get user1's earned bonus
       const [referrer1After, earnedBonusAfter] = await movinEarn.getReferralInfo(user1.address);
-      expect(earnedBonusAfter).to.equal(ethers.parseEther("0.02")); // 0.1% for steps and 0.1% for mets of user2
+      expect(earnedBonusAfter).to.equal(ethers.parseEther('0.02')); // 0.1% for steps and 0.1% for mets of user2
     });
   });
 
-  describe("Administrative functions", function () {
-    it("Should allow owner to pause and unpause", async function () {
+  describe('Administrative functions', function () {
+    it('Should allow owner to pause and unpause', async function () {
       // Approve MOVINEarnV2 to spend user1's tokens
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
 
@@ -886,30 +942,30 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(owner).emergencyPause();
 
       // Try to stake tokens while paused
-      await expect(movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 1))
-        .to.be.revertedWithCustomError(movinEarn, "ContractPaused");
+      await expect(
+        movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 1)
+      ).to.be.revertedWithCustomError(movinEarn, 'ContractPaused');
 
       // Unpause contract
       await movinEarn.connect(owner).emergencyUnpause();
 
       // Staking should work now
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 1);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 1);
     });
 
-    it("Should only allow owner to set premium status", async function () {
+    it('Should only allow owner to set premium status', async function () {
       // Verify initial premium status is false
       expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(false);
 
       // Try to set premium status as non-owner (should fail)
-      await expect(movinEarn.connect(user1).setPremiumStatus(user2.address, true))
-        .to.be.reverted; // Will revert with an Ownable error
+      await expect(movinEarn.connect(user1).setPremiumStatus(user2.address, true)).to.be.reverted; // Will revert with an Ownable error
 
       // Verify status didn't change
       expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(false);
 
       // Set premium status as owner (should succeed)
       await expect(movinEarn.connect(owner).setPremiumStatus(user2.address, true))
-        .to.emit(movinEarn, "PremiumStatusChanged")
+        .to.emit(movinEarn, 'PremiumStatusChanged')
         .withArgs(user2.address, true);
 
       // Verify status changed
@@ -923,11 +979,11 @@ describe("MOVINEarnV2", function () {
     });
   });
 
-  describe("Migration functionality", function () {
+  describe('Migration functionality', function () {
     it("Should allow owner to migrate a single user's data", async function () {
       // Create test data for a user
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 3);
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
       await movinEarn.connect(user2).registerReferral(user1.address);
 
@@ -936,13 +992,13 @@ describe("MOVINEarnV2", function () {
 
       // Test migration of a single user
       await expect(movinEarn.connect(owner).migrateUserData(user1.address))
-        .to.emit(movinEarn, "UserDataMigrated")
+        .to.emit(movinEarn, 'UserDataMigrated')
         .withArgs(user1.address, true);
 
       // Verify data is still accessible after migration
       const stakes = await movinEarn.getUserStakes(user1.address);
       expect(stakes.length).to.equal(1);
-      expect(stakes[0].amount).to.equal(ethers.parseEther("100"));
+      expect(stakes[0].amount).to.equal(ethers.parseEther('100'));
 
       const isPremium = await movinEarn.getIsPremiumUser(user1.address);
       expect(isPremium).to.equal(true);
@@ -952,10 +1008,10 @@ describe("MOVINEarnV2", function () {
       expect(referrals[0]).to.equal(user2.address);
     });
 
-    it("Should fix corrupted stakes during migration", async function () {
+    it('Should fix corrupted stakes during migration', async function () {
       // Create a valid stake
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 3);
 
       // Access the storage directly to corrupt a stake (setting lastClaimed to 0)
       const userStakes = await movinEarn.userStakes(user1.address, 0);
@@ -973,11 +1029,11 @@ describe("MOVINEarnV2", function () {
       // Verify stakes are still valid after migration
       const stakesAfter = await movinEarn.getUserStakes(user1.address);
       expect(stakesAfter.length).to.equal(1); // Should still have one stake
-      expect(stakesAfter[0].amount).to.equal(ethers.parseEther("100"));
+      expect(stakesAfter[0].amount).to.equal(ethers.parseEther('100'));
       expect(stakesAfter[0].lastClaimed).to.not.equal(0); // lastClaimed should be set
     });
 
-    it("Should reset daily activity from previous days during migration", async function () {
+    it('Should reset daily activity from previous days during migration', async function () {
       // Record activity
       await movinEarn.connect(user1).recordActivity(5000, 5);
 
@@ -993,18 +1049,17 @@ describe("MOVINEarnV2", function () {
       expect(mets).to.equal(0); // METs should be reset to 0
     });
 
-    it("Should not allow non-owner to migrate user data", async function () {
-      await expect(movinEarn.connect(user1).migrateUserData(user2.address))
-        .to.be.reverted; // Will revert with an Ownable error
+    it('Should not allow non-owner to migrate user data', async function () {
+      await expect(movinEarn.connect(user1).migrateUserData(user2.address)).to.be.reverted; // Will revert with an Ownable error
     });
 
-    it("Should allow bulk migration of multiple users", async function () {
+    it('Should allow bulk migration of multiple users', async function () {
       // Create test data for multiple users
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
       await movinToken.connect(user2).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
 
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
-      await movinEarn.connect(user2).stakeTokens(ethers.parseEther("200"), 6);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 3);
+      await movinEarn.connect(user2).stakeTokens(ethers.parseEther('200'), 6);
 
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
       await movinEarn.connect(owner).setPremiumStatus(user2.address, true);
@@ -1040,17 +1095,19 @@ describe("MOVINEarnV2", function () {
       expect(user2Mets).to.equal(0);
     });
 
-    it("Should handle errors during bulk migration gracefully", async function () {
+    it('Should handle errors during bulk migration gracefully', async function () {
       // Create a new user that doesn't exist in the contract yet
       const nonExistentUser = ethers.Wallet.createRandom().address;
 
       // Test bulk migration with some valid and some invalid users
-      const tx = await movinEarn.connect(owner).bulkMigrateUserData([user1.address, nonExistentUser, user2.address]);
+      const tx = await movinEarn
+        .connect(owner)
+        .bulkMigrateUserData([user1.address, nonExistentUser, user2.address]);
       const receipt = await tx.wait();
 
       // Check that an event was emitted
       const events = receipt?.logs.filter(
-        log => log.topics[0] === movinEarn.interface.getEvent("BulkMigrationCompleted").topicHash
+        log => log.topics[0] === movinEarn.interface.getEvent('BulkMigrationCompleted').topicHash
       );
 
       expect(events?.length).to.be.greaterThan(0);
@@ -1064,7 +1121,7 @@ describe("MOVINEarnV2", function () {
       expect(user2Stakes).to.not.be.undefined;
     });
 
-    it("Should fix referral count inconsistencies during migration", async function () {
+    it('Should fix referral count inconsistencies during migration', async function () {
       // Register referrals to user1
       await movinEarn.connect(user2).registerReferral(user1.address);
 
@@ -1082,13 +1139,13 @@ describe("MOVINEarnV2", function () {
       expect(referralCountAfter).to.equal(referralsBeforeMigration.length);
     });
 
-    it("Should handle multiple stake migrations correctly", async function () {
+    it('Should handle multiple stake migrations correctly', async function () {
       // Create multiple stakes for one user
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
 
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("50"), 1);
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("75"), 3);
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 6);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('50'), 1);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('75'), 3);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 6);
 
       // Get stakes before migration
       const stakesBeforeMigration = await movinEarn.getUserStakes(user1.address);
@@ -1104,12 +1161,12 @@ describe("MOVINEarnV2", function () {
       expect(stakesAfterMigration.length).to.equal(3);
 
       // Verify stake amounts are preserved
-      expect(stakesAfterMigration[0].amount).to.equal(ethers.parseEther("50"));
-      expect(stakesAfterMigration[1].amount).to.equal(ethers.parseEther("75"));
-      expect(stakesAfterMigration[2].amount).to.equal(ethers.parseEther("100"));
+      expect(stakesAfterMigration[0].amount).to.equal(ethers.parseEther('50'));
+      expect(stakesAfterMigration[1].amount).to.equal(ethers.parseEther('75'));
+      expect(stakesAfterMigration[2].amount).to.equal(ethers.parseEther('100'));
     });
 
-    it("Should fix missing reward accumulation timestamps during migration", async function () {
+    it('Should fix missing reward accumulation timestamps during migration', async function () {
       // Set user as premium to enable METs rewards
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -1117,28 +1174,38 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(user1).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
 
       // Check if rewards were accumulated
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
 
       // If rewards were accumulated, ensure migration keeps them valid
       if (pendingStepsReward > 0 || pendingMetsReward > 0) {
-        console.log(`Pending rewards before migration: ${ethers.formatEther(pendingStepsReward)} steps, ${ethers.formatEther(pendingMetsReward)} mets`);
+        console.log(
+          `Pending rewards before migration: ${ethers.formatEther(pendingStepsReward)} steps, ${ethers.formatEther(pendingMetsReward)} mets`
+        );
 
         // Get activity data
         let lastRewardAccumulationTime;
         try {
           const activity = await movinEarn.userActivities(user1.address);
           lastRewardAccumulationTime = activity.lastRewardAccumulationTime;
-          console.log(`Last reward accumulation time before migration: ${lastRewardAccumulationTime}`);
+          console.log(
+            `Last reward accumulation time before migration: ${lastRewardAccumulationTime}`
+          );
         } catch (e) {
-          console.log("Could not access activity data directly");
+          console.log('Could not access activity data directly');
         }
 
         // Perform migration
         await movinEarn.connect(owner).migrateUserData(user1.address);
 
         // Check rewards after migration
-        const [pendingStepsRewardAfter, pendingMetsRewardAfter] = await movinEarn.connect(user1).getPendingRewards();
-        console.log(`Pending rewards after migration: ${ethers.formatEther(pendingStepsRewardAfter)} steps, ${ethers.formatEther(pendingMetsRewardAfter)} mets`);
+        const [pendingStepsRewardAfter, pendingMetsRewardAfter] = await movinEarn
+          .connect(user1)
+          .getPendingRewards();
+        console.log(
+          `Pending rewards after migration: ${ethers.formatEther(pendingStepsRewardAfter)} steps, ${ethers.formatEther(pendingMetsRewardAfter)} mets`
+        );
 
         // Verify rewards are preserved
         expect(pendingStepsRewardAfter).to.equal(pendingStepsReward);
@@ -1147,24 +1214,26 @@ describe("MOVINEarnV2", function () {
         // Verify last reward time is set
         try {
           const activityAfter = await movinEarn.userActivities(user1.address);
-          console.log(`Last reward accumulation time after migration: ${activityAfter.lastRewardAccumulationTime}`);
+          console.log(
+            `Last reward accumulation time after migration: ${activityAfter.lastRewardAccumulationTime}`
+          );
           console.log(`Last updated after migration: ${activityAfter.lastUpdated}`);
 
           // Verify time is set
           expect(activityAfter.lastRewardAccumulationTime).to.not.equal(0);
           expect(activityAfter.lastUpdated).to.not.equal(0);
         } catch (e) {
-          console.log("Could not access activity data directly");
+          console.log('Could not access activity data directly');
         }
       } else {
-        console.log("No pending rewards to test with");
+        console.log('No pending rewards to test with');
       }
     });
 
-    it("Should properly initialize lastUpdated field during migration", async function () {
+    it('Should properly initialize lastUpdated field during migration', async function () {
       // Create test data for a user
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther("100"), 3);
+      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 3);
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
       // Record activity to establish the lastUpdated field
@@ -1190,15 +1259,17 @@ describe("MOVINEarnV2", function () {
       expect(Number(activityDataAfter.lastUpdated)).to.be.at.least(Number(lastUpdatedBefore));
     });
 
-    it("Should initialize lastUpdated for users without existing activity data", async function () {
+    it('Should initialize lastUpdated for users without existing activity data', async function () {
       // Create a new user that has no activity data yet
       const newUser = user2;
 
       // Make sure user has no existing activity data
       try {
         // Create stake to establish user in the system, but don't record activity
-        await movinToken.connect(newUser).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
-        await movinEarn.connect(newUser).stakeTokens(ethers.parseEther("100"), 3);
+        await movinToken
+          .connect(newUser)
+          .approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
+        await movinEarn.connect(newUser).stakeTokens(ethers.parseEther('100'), 3);
 
         // Migrate user data - should initialize lastUpdated
         await movinEarn.connect(owner).migrateUserData(newUser.address);
@@ -1210,7 +1281,7 @@ describe("MOVINEarnV2", function () {
         expect(activityData.lastUpdated).to.not.equal(0);
 
         // Get current block timestamp
-        const block = await ethers.provider.getBlock("latest");
+        const block = await ethers.provider.getBlock('latest');
         const currentTimestamp = block ? block.timestamp : 0;
 
         // Verify lastUpdated is approximately the current timestamp
@@ -1222,8 +1293,8 @@ describe("MOVINEarnV2", function () {
     });
   });
 
-  describe("Activity reward claiming", function () {
-    it("Should allow activity reward claiming with referral bonus", async function () {
+  describe('Activity reward claiming', function () {
+    it('Should allow activity reward claiming with referral bonus', async function () {
       // Set up referral relationship
       await movinEarn.connect(user2).registerReferral(user1.address);
 
@@ -1234,7 +1305,9 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(user2).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
 
       // Check if rewards were recorded
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user2).getPendingRewards();
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user2)
+        .getPendingRewards();
       const totalReward = pendingStepsReward + pendingMetsReward;
       expect(totalReward).to.be.gt(0);
 
@@ -1259,7 +1332,7 @@ describe("MOVINEarnV2", function () {
       expect(user2BalanceAfter - user2BalanceBefore).to.equal(totalReward);
     });
 
-    it("Should allow activity reward claiming without referral", async function () {
+    it('Should allow activity reward claiming without referral', async function () {
       // Ensure no referral is set
       const [referrer] = await movinEarn.getReferralInfo(user1.address);
       expect(referrer).to.equal(ethers.ZeroAddress);
@@ -1271,7 +1344,9 @@ describe("MOVINEarnV2", function () {
       await movinEarn.connect(user1).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
 
       // Check if rewards were recorded
-      const [pendingStepsReward, pendingMetsReward] = await movinEarn.connect(user1).getPendingRewards();
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
       const totalReward = pendingStepsReward + pendingMetsReward;
       expect(totalReward).to.be.gt(0);
 
@@ -1291,7 +1366,7 @@ describe("MOVINEarnV2", function () {
       expect(user1BalanceAfter - user1BalanceBefore).to.equal(expectedUserReward);
     });
 
-    it("Should handle expired rewards", async function () {
+    it('Should handle expired rewards', async function () {
       // Set user premium
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
 
@@ -1302,18 +1377,20 @@ describe("MOVINEarnV2", function () {
       await time.increase(31 * 24 * 60 * 60);
 
       // Attempt to claim should revert
-      await expect(movinEarn.connect(user1).claimRewards())
-        .to.be.revertedWithCustomError(movinEarn, "RewardsExpired");
+      await expect(movinEarn.connect(user1).claimRewards()).to.be.revertedWithCustomError(
+        movinEarn,
+        'RewardsExpired'
+      );
     });
   });
 
-  describe("Activity history", function () {
+  describe('Activity history', function () {
     beforeEach(async function () {
       // Set user1 as premium for testing both steps and METs history
       await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
     });
 
-    it("Should record steps history correctly", async function () {
+    it('Should record steps history correctly', async function () {
       // Record initial activity
       await movinEarn.connect(user1).recordActivity(5000, 0);
 
@@ -1334,7 +1411,7 @@ describe("MOVINEarnV2", function () {
       expect(updatedHistory[1].timestamp).to.be.gt(updatedHistory[0].timestamp);
     });
 
-    it("Should record METs history for premium users", async function () {
+    it('Should record METs history for premium users', async function () {
       // Record initial activity with METs
       await movinEarn.connect(user1).recordActivity(0, 5);
 
@@ -1355,7 +1432,7 @@ describe("MOVINEarnV2", function () {
       expect(updatedHistory[1].timestamp).to.be.gt(updatedHistory[0].timestamp);
     });
 
-    it("Should not record METs history for non-premium users", async function () {
+    it('Should not record METs history for non-premium users', async function () {
       // Set user2 as non-premium
       await movinEarn.connect(owner).setPremiumStatus(user2.address, false);
 
@@ -1367,7 +1444,7 @@ describe("MOVINEarnV2", function () {
       expect(metsHistory.length).to.equal(0);
     });
 
-    it("Should maintain separate histories for steps and METs", async function () {
+    it('Should maintain separate histories for steps and METs', async function () {
       // Record activity with both steps and METs
       await movinEarn.connect(user1).recordActivity(5000, 5);
 
@@ -1394,7 +1471,7 @@ describe("MOVINEarnV2", function () {
       expect(updatedMetsHistory[1].value).to.equal(3n); // 3
     });
 
-    it("Should maintain history across day changes", async function () {
+    it('Should maintain history across day changes', async function () {
       // Record initial activity
       await movinEarn.connect(user1).recordActivity(5000, 5);
 
@@ -1425,7 +1502,7 @@ describe("MOVINEarnV2", function () {
       expect(finalMetsHistory[Number(finalMetsLength - 1n)].value).to.equal(3n);
     });
 
-    it("Should not record history for zero activity", async function () {
+    it('Should not record history for zero activity', async function () {
       // Record zero activity
       await movinEarn.connect(user1).recordActivity(0, 0);
 
@@ -1438,9 +1515,9 @@ describe("MOVINEarnV2", function () {
       expect(metsLength).to.equal(0n);
     });
 
-    it("Should record history with correct timestamps", async function () {
+    it('Should record history with correct timestamps', async function () {
       // Get current timestamp
-      const block = await ethers.provider.getBlock("latest");
+      const block = await ethers.provider.getBlock('latest');
       const startTime = block ? BigInt(block.timestamp) : 0n;
 
       // Record initial activity
@@ -1470,8 +1547,8 @@ describe("MOVINEarnV2", function () {
     });
   });
 
-  describe("Referral rewards", function () {
-    it("Should handle referral rewards correctly", async function () {
+  describe('Referral rewards', function () {
+    it('Should handle referral rewards correctly', async function () {
       // Set up referral relationship
       await movinEarn.connect(user2).registerReferral(user1.address);
 
@@ -1504,7 +1581,7 @@ describe("MOVINEarnV2", function () {
       const user1Received = user1BalanceAfter - user1BalanceBefore;
 
       // Verify amounts with small tolerance for rounding
-      const tolerance = ethers.parseEther("0.01");
+      const tolerance = ethers.parseEther('0.01');
       expect(user2Received).to.be.closeTo(totalReward, tolerance);
       expect(user1Received).to.be.closeTo(referralBonus, tolerance);
 
@@ -1513,4 +1590,4 @@ describe("MOVINEarnV2", function () {
       expect(earnedBonus).to.equal(referralBonus);
     });
   });
-}); 
+});
