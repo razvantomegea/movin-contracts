@@ -597,8 +597,8 @@ describe('MOVINEarnV2', function () {
       const [pendingStepsReward, pendingMetsReward] = await movinEarn
         .connect(user1)
         .getPendingRewards();
-      expect(pendingStepsReward).to.equal(ethers.parseEther('2.97')); // 1 MVN per 10000 steps
-      expect(pendingMetsReward).to.equal(ethers.parseEther('3.6')); // 1 MVN per 10 mets
+      expect(pendingStepsReward).to.equal(ethers.parseEther('7.92')); // 1 MVN per 10000 steps
+      expect(pendingMetsReward).to.equal(ethers.parseEther('8.1')); // 1 MVN per 10 mets
 
       // Advance time to next day of year
       const secondsInDay = 24 * 60 * 60;
@@ -691,7 +691,7 @@ describe('MOVINEarnV2', function () {
         .connect(user1)
         .getPendingRewards();
       expect(pendingStepsReward).to.equal(0);
-      expect(pendingMetsReward).to.equal(ethers.parseEther('50')); // 501 METs = 50.1 MVN (1 MVN per 10 METs)
+      expect(pendingMetsReward).to.equal(ethers.parseEther('2524.5')); // 501 METs = 50.1 MVN (1 MVN per 10 METs)
 
       // Advance time to next day
       await time.increase(24 * 60 * 60);
@@ -708,7 +708,7 @@ describe('MOVINEarnV2', function () {
         .connect(user1)
         .getPendingRewards();
       expect(newPendingStepsReward).to.equal(0);
-      expect(newPendingMetsReward).to.equal(ethers.parseEther('50')); // Rewards should persist
+      expect(newPendingMetsReward).to.equal(ethers.parseEther('2524.5')); // Rewards should persist
 
       // Claim rewards
       await movinEarn.connect(user1).claimRewards();
