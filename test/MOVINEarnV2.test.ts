@@ -458,6 +458,74 @@ describe('MOVINEarnV2', function () {
       expect(recordedMetsAfter).to.equal(0);
     });
 
+    it('Should reset only steps after claiming rewards if mets are below threshold', async function () {
+      // Set user as premium to test both steps and METs
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+
+      // Record activity that exceeds thresholds (within time-based limits)
+      const steps = STEPS_THRESHOLD;
+      const mets = METS_THRESHOLD - 1;
+      await movinEarn.connect(user1).recordActivity(steps, mets);
+
+      // Verify activity was recorded
+      const [recordedStepsBefore, recordedMetsBefore] = await movinEarn
+        .connect(user1)
+        .getUserActivity();
+      expect(recordedStepsBefore).to.equal(steps);
+      expect(recordedMetsBefore).to.equal(mets);
+
+      // Get pending rewards to confirm we have something to claim
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(pendingStepsReward).to.equal(ethers.parseEther('1'));
+      expect(pendingMetsReward).to.equal(ethers.parseEther('0'));
+
+      // Claim rewards
+      await movinEarn.connect(user1).claimRewards();
+
+      // Verify activity counts were reset to 0
+      const [recordedStepsAfter, recordedMetsAfter] = await movinEarn
+        .connect(user1)
+        .getUserActivity();
+      expect(recordedStepsAfter).to.equal(0);
+      expect(recordedMetsAfter).to.equal(mets);
+    });
+
+    it('Should reset only mets after claiming rewards if steps are below threshold', async function () {
+      // Set user as premium to test both steps and METs
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+
+      // Record activity that exceeds thresholds (within time-based limits)
+      const steps = STEPS_THRESHOLD - 1;
+      const mets = METS_THRESHOLD;
+      await movinEarn.connect(user1).recordActivity(steps, mets);
+
+      // Verify activity was recorded
+      const [recordedStepsBefore, recordedMetsBefore] = await movinEarn
+        .connect(user1)
+        .getUserActivity();
+      expect(recordedStepsBefore).to.equal(steps);
+      expect(recordedMetsBefore).to.equal(mets);
+
+      // Get pending rewards to confirm we have something to claim
+      const [pendingStepsReward, pendingMetsReward] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(pendingStepsReward).to.equal(ethers.parseEther('0'));
+      expect(pendingMetsReward).to.equal(ethers.parseEther('1'));
+
+      // Claim rewards
+      await movinEarn.connect(user1).claimRewards();
+
+      // Verify activity counts were reset to 0
+      const [recordedStepsAfter, recordedMetsAfter] = await movinEarn
+        .connect(user1)
+        .getUserActivity();
+      expect(recordedStepsAfter).to.equal(steps);
+      expect(recordedMetsAfter).to.equal(0);
+    });
+
     it('Should reset daily activity counts on day of year change', async function () {
       // Record initial activity
       await movinEarn.connect(user1).recordActivity(5000, 5);

@@ -595,11 +595,16 @@ contract MOVINEarnV2 is
     if (totalReward == 0) revert NoRewardsAvailable();
 
     // Reset rewards
-    activity.pendingStepsRewards = 0;
-    activity.pendingMetsRewards = 0;
-    // Reset daily activity counts after claiming
-    activity.dailySteps = 0;
-    activity.dailyMets = 0;
+
+    if (activity.pendingStepsRewards > 0) {
+      activity.pendingStepsRewards = 0;
+      activity.dailySteps = 0;
+    }
+
+    if (activity.pendingMetsRewards > 0) {
+      activity.pendingMetsRewards = 0;
+      activity.dailyMets = 0;
+    }
 
     // Send full reward to user
     _distributeTokens(msg.sender, totalReward, true);
