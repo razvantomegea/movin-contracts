@@ -494,7 +494,7 @@ contract MOVINEarnV2 is
     if (activity.dailySteps >= STEPS_THRESHOLD && activity.dailySteps <= MAX_DAILY_STEPS) {
       // Calculate reward based on the current daily steps
       stepsReward = (activity.dailySteps * baseStepsRate) / STEPS_THRESHOLD;
-      activity.pendingStepsRewards += stepsReward;
+      activity.pendingStepsRewards = stepsReward;
     }
 
     uint256 metsReward = 0;
@@ -505,7 +505,7 @@ contract MOVINEarnV2 is
     ) {
       // Calculate reward based on the current daily METs
       metsReward = (activity.dailyMets * baseMetsRate) / METS_THRESHOLD;
-      activity.pendingMetsRewards += metsReward;
+      activity.pendingMetsRewards = metsReward;
     }
 
     emit ActivityRecorded(
