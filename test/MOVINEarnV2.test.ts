@@ -149,14 +149,15 @@ describe('MOVINEarnV2', function () {
       // Stake tokens
       await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
 
-      // Advance time by 30 days
-      await time.increase(THIRTY_DAYS);
+      // Advance time by 12 hours (less than 1 day expiration)
+      await time.increase(12 * 60 * 60);
 
       // Calculate expected reward
       // Formula: (amount * apr * effectiveDuration) / (100 * 365 days)
       const apr = 12; // Multiplier for 12 months
+      const durationSeconds = 12 * 60 * 60; // 12 hours
       const expectedReward =
-        (stakeAmount * BigInt(apr) * BigInt(THIRTY_DAYS)) / (BigInt(100) * BigInt(ONE_YEAR));
+        (stakeAmount * BigInt(apr) * BigInt(durationSeconds)) / (BigInt(100) * BigInt(ONE_YEAR));
 
       // Get calculated reward from contract
       const reward = await movinEarn.connect(user1).calculateStakingReward(0);
@@ -178,8 +179,8 @@ describe('MOVINEarnV2', function () {
       // Stake tokens
       await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
 
-      // Advance time by 30 days
-      await time.increase(THIRTY_DAYS);
+      // Advance time by 12 hours (less than 1 day expiration)
+      await time.increase(12 * 60 * 60);
 
       // Get user balance before claiming
       const balanceBefore = await movinToken.balanceOf(user1.address);
@@ -230,8 +231,8 @@ describe('MOVINEarnV2', function () {
       await movinEarn.connect(user1).stakeTokens(stake2Amount, 3); // 3 months
       await movinEarn.connect(user1).stakeTokens(stake3Amount, 6); // 6 months
 
-      // Advance time by 15 days to accumulate some rewards
-      await time.increase(15 * 24 * 60 * 60);
+      // Advance time by 12 hours (less than 1 day expiration)
+      await time.increase(12 * 60 * 60);
 
       // Calculate total expected rewards
       let totalExpectedReward = BigInt(0);
@@ -759,7 +760,10 @@ describe('MOVINEarnV2', function () {
         .connect(user1)
         .getPendingRewards();
       expect(pendingStepsReward).to.equal(0);
-      expect(pendingMetsReward).to.equal(ethers.parseEther('50')); // 501 METs = 50.1 MVN (1 MVN per 10 METs)
+      // Reward should be calculated based on MAX_DAILY_METS, as accumulation stops there
+      const expectedMetsReward =
+        (BigInt(MAX_DAILY_METS) * (await movinEarn.baseMetsRate())) / BigInt(METS_THRESHOLD);
+      expect(pendingMetsReward).to.equal(expectedMetsReward); // Check reward at the limit
 
       // Advance time to next day
       await time.increase(24 * 60 * 60);
@@ -776,17 +780,9 @@ describe('MOVINEarnV2', function () {
         .connect(user1)
         .getPendingRewards();
       expect(newPendingStepsReward).to.equal(0);
-      expect(newPendingMetsReward).to.equal(ethers.parseEther('50')); // Rewards should persist
 
-      // Claim rewards
-      await movinEarn.connect(user1).claimRewards();
-
-      // Verify rewards were reset after claiming
-      const [finalPendingStepsReward, finalPendingMetsReward] = await movinEarn
-        .connect(user1)
-        .getPendingRewards();
-      expect(finalPendingStepsReward).to.equal(0);
-      expect(finalPendingMetsReward).to.equal(0);
+      // Rewards are lost after 1 day
+      expect(newPendingMetsReward).to.equal(ethers.parseEther('0'));
     });
 
     it('Should validate the lastUpdated field is set during activity recording', async function () {
@@ -1441,14 +1437,65 @@ describe('MOVINEarnV2', function () {
       // Record enough activity to qualify for rewards
       await movinEarn.connect(user1).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
 
-      // Advance time beyond expiration (30 days)
-      await time.increase(31 * 24 * 60 * 60);
+      // Check rewards exist before expiration
+      const [stepsRewardBefore, metsRewardBefore] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(stepsRewardBefore + metsRewardBefore).to.be.gt(0);
 
-      // Attempt to claim should revert
+      // Advance time just beyond expiration (1 day + 1 minute)
+      await time.increase(ONE_DAY + 60);
+
+      // Attempt to claim should revert with RewardsExpired
       await expect(movinEarn.connect(user1).claimRewards()).to.be.revertedWithCustomError(
         movinEarn,
         'RewardsExpired'
       );
+
+      // Verify getPendingRewards also returns 0 after expiration
+      const [stepsRewardAfter, metsRewardAfter] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(stepsRewardAfter).to.equal(0);
+      expect(metsRewardAfter).to.equal(0);
+    });
+
+    it('Should allow claiming activity rewards just before expiration', async function () {
+      // Set user premium
+      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+
+      // Record enough activity to qualify for rewards
+      await movinEarn.connect(user1).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
+
+      // Check rewards exist
+      const [stepsRewardBefore, metsRewardBefore] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      const totalReward = stepsRewardBefore + metsRewardBefore;
+      expect(totalReward).to.be.gt(0);
+
+      // Advance time almost to expiration (1 day - 1 minute)
+      await time.increase(ONE_DAY - 60);
+
+      // Verify rewards are still available via getPendingRewards
+      const [stepsRewardAlmostExpired, metsRewardAlmostExpired] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(stepsRewardAlmostExpired).to.equal(stepsRewardBefore);
+      expect(metsRewardAlmostExpired).to.equal(metsRewardBefore);
+
+      // Claim should succeed
+      const balanceBefore = await movinToken.balanceOf(user1.address);
+      await expect(movinEarn.connect(user1).claimRewards()).to.not.be.reverted;
+      const balanceAfter = await movinToken.balanceOf(user1.address);
+      expect(balanceAfter - balanceBefore).to.equal(totalReward);
+
+      // Pending rewards should be zero after claim
+      const [stepsRewardAfterClaim, metsRewardAfterClaim] = await movinEarn
+        .connect(user1)
+        .getPendingRewards();
+      expect(stepsRewardAfterClaim).to.equal(0);
+      expect(metsRewardAfterClaim).to.equal(0);
     });
   });
 
@@ -1656,6 +1703,126 @@ describe('MOVINEarnV2', function () {
       // Verify referral info was updated
       const [_, earnedBonus] = await movinEarn.getReferralInfo(user1.address);
       expect(earnedBonus).to.equal(referralBonus);
+    });
+  });
+
+  describe('Staking Reward Expiration (1 Day)', function () {
+    beforeEach(async function () {
+      // Approve tokens for user1
+      await movinToken
+        .connect(user1)
+        .approve(await movinEarn.getAddress(), ethers.parseEther('10000'));
+      await movinEarn.connect(owner).mintToken(user1.address, ethers.parseEther('10000'));
+    });
+
+    it('Should allow claiming staking rewards before 1 day expiration', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, 1); // 1 month lock
+
+      // Advance time less than 1 day (e.g., 12 hours)
+      await time.increase(12 * 60 * 60);
+
+      const reward = await movinEarn.connect(user1).calculateStakingReward(0);
+      expect(reward).to.be.gt(0);
+
+      // Claim should succeed
+      const balanceBefore = await movinToken.balanceOf(user1.address);
+      await expect(movinEarn.connect(user1).claimStakingRewards(0)).to.not.be.reverted;
+      const balanceAfter = await movinToken.balanceOf(user1.address);
+      const actualReward = balanceAfter - balanceBefore;
+
+      // Use tolerance comparison
+      const rewardDifference =
+        reward > actualReward ? reward - actualReward : actualReward - reward;
+      expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
+    });
+
+    it('Should prevent claiming staking rewards after 1 day expiration', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, 1); // 1 month lock
+
+      // Advance time more than 1 day (e.g., 1 day + 1 hour)
+      await time.increase(ONE_DAY + 3600);
+
+      // Calculate reward should return 0
+      const reward = await movinEarn.connect(user1).calculateStakingReward(0);
+      expect(reward).to.equal(0);
+
+      // Claim should revert
+      await expect(movinEarn.connect(user1).claimStakingRewards(0)).to.be.revertedWithCustomError(
+        movinEarn,
+        'NoRewardsAvailable'
+      );
+    });
+
+    it('claimAllStakingRewards should claim only non-expired rewards', async function () {
+      const stakeAmount1 = ethers.parseEther('1000');
+      const stakeAmount2 = ethers.parseEther('1500');
+
+      // Stake 1
+      await movinEarn.connect(user1).stakeTokens(stakeAmount1, 3); // 3 months
+      const stake1Timestamp = (await ethers.provider.getBlock('latest'))?.timestamp ?? 0;
+
+      // Wait 12 hours
+      await time.increase(12 * 60 * 60);
+
+      // Stake 2
+      await movinEarn.connect(user1).stakeTokens(stakeAmount2, 6); // 6 months
+
+      // Wait another 13 hours (total time elapsed: 25 hours for stake 1, 13 hours for stake 2)
+      await time.increase(13 * 60 * 60);
+
+      // Calculate expected rewards (only stake 2 should have rewards)
+      const reward1 = await movinEarn.connect(user1).calculateStakingReward(0);
+      const reward2 = await movinEarn.connect(user1).calculateStakingReward(1);
+
+      expect(reward1).to.equal(0); // Stake 1 should be expired
+      expect(reward2).to.be.gt(0); // Stake 2 should not be expired
+      const totalExpectedReward = reward2;
+
+      // Claim all rewards
+      const balanceBefore = await movinToken.balanceOf(user1.address);
+      await expect(movinEarn.connect(user1).claimAllStakingRewards()).to.not.be.reverted;
+      const balanceAfter = await movinToken.balanceOf(user1.address);
+      const actualTotalReward = balanceAfter - balanceBefore;
+
+      // Verify only reward2 was claimed (use tolerance)
+      const rewardDifference =
+        totalExpectedReward > actualTotalReward
+          ? totalExpectedReward - actualTotalReward
+          : actualTotalReward - totalExpectedReward;
+      expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
+
+      // Verify lastClaimed was updated for BOTH stakes
+      const stake1 = await movinEarn.connect(user1).getUserStake(0);
+      const stake2 = await movinEarn.connect(user1).getUserStake(1);
+      const claimTimestamp = (await ethers.provider.getBlock('latest'))?.timestamp ?? 0;
+
+      expect(Number(stake1.lastClaimed)).to.be.closeTo(claimTimestamp, 5);
+      expect(Number(stake2.lastClaimed)).to.be.closeTo(claimTimestamp, 5);
+    });
+
+    it('claimAllStakingRewards should revert if all rewards are expired', async function () {
+      const stakeAmount1 = ethers.parseEther('1000');
+      const stakeAmount2 = ethers.parseEther('1500');
+
+      await movinEarn.connect(user1).stakeTokens(stakeAmount1, 3); // 3 months
+      await movinEarn.connect(user1).stakeTokens(stakeAmount2, 6); // 6 months
+
+      // Advance time more than 1 day (e.g., 1 day + 1 hour)
+      await time.increase(ONE_DAY + 3600);
+
+      // Calculate rewards (both should be 0)
+      const reward1 = await movinEarn.connect(user1).calculateStakingReward(0);
+      const reward2 = await movinEarn.connect(user1).calculateStakingReward(1);
+      expect(reward1).to.equal(0);
+      expect(reward2).to.equal(0);
+
+      // Claim all should revert
+      await expect(movinEarn.connect(user1).claimAllStakingRewards()).to.be.revertedWithCustomError(
+        movinEarn,
+        'NoRewardsAvailable'
+      );
     });
   });
 });

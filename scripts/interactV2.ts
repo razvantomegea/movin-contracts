@@ -540,6 +540,47 @@ async function testActivitiesAndRewards(
     return true;
   } catch (error: any) {
     console.error(`❌ Activity and rewards tests failed: ${error.message}`);
+    // Add test for reward expiration
+    console.log('\n--- ⏳ TESTING ACTIVITY REWARD EXPIRATION (1 DAY) ---');
+    try {
+      // Record activity to generate rewards
+      await movinEarnV2.connect(user1).recordActivity(10000, 10); // STEPS_THRESHOLD, METS_THRESHOLD
+      console.log('✅ Recorded activity to generate rewards for user1.');
+
+      const [stepsBefore, metsBefore] = await movinEarnV2.connect(user1).getPendingRewards();
+      console.log(
+        `Pending rewards before expiration check: ${ethers.formatEther(stepsBefore)} steps, ${ethers.formatEther(metsBefore)} METs`
+      );
+
+      // Advance time just beyond 1 day
+      console.log('⏱ Advancing time by 1 day + 1 minute...');
+      await time.increase(24 * 60 * 60 + 60);
+
+      // Check pending rewards again (should be 0)
+      const [stepsAfter, metsAfter] = await movinEarnV2.connect(user1).getPendingRewards();
+      console.log(
+        `Pending rewards after 1 day: ${ethers.formatEther(stepsAfter)} steps, ${ethers.formatEther(metsAfter)} METs`
+      );
+      if (stepsAfter === 0n && metsAfter === 0n) {
+        console.log('✅ Pending activity rewards correctly show 0 after expiration.');
+      } else {
+        console.log('❌ Pending activity rewards did NOT reset after expiration.');
+      }
+
+      // Attempt to claim (should fail)
+      console.log('Attempting to claim expired activity rewards (should fail)...');
+      await movinEarnV2.connect(user1).claimRewards();
+      console.log('❌ Claiming expired activity rewards succeeded (should have failed).');
+    } catch (error: any) {
+      if (error.message.includes('RewardsExpired')) {
+        console.log('✅ Claiming expired activity rewards correctly failed with RewardsExpired.');
+      } else {
+        console.log(
+          `❌ Claiming expired activity rewards failed with unexpected error: ${error.message.split('\n')[0]}`
+        );
+      }
+    }
+
     return false;
   }
 }
@@ -597,94 +638,135 @@ async function testClaimAllStakingRewards(
       const stake = await movinEarnV2.connect(user).getUserStake(i);
       const stakeReward = await movinEarnV2.connect(user).calculateStakingReward(i);
 
+      // Fix month calculation for logging
+      const lockMonths = Number(stake.lockDuration) / (30 * 24 * 60 * 60);
       console.log(
-        `Stake ${i} (${ethers.formatEther(stake.amount)} MOVIN for ${stake.lockDuration} months):`
+        `Stake ${i} (${ethers.formatEther(stake.amount)} MOVIN for ${lockMonths} months):`
       );
       console.log(`  Expected reward: ${ethers.formatEther(stakeReward)} MOVIN`);
 
       totalExpectedReward += stakeReward;
     }
 
-    console.log(`\nTotal expected reward: ${ethers.formatEther(totalExpectedReward)} MOVIN`);
+    console.log('\nTotal expected reward:', ethers.formatEther(totalExpectedReward), 'MOVIN');
 
     // Check user balance before claiming
     const balanceBefore = await movinToken.balanceOf(user.address);
     console.log(`User balance before claiming: ${ethers.formatEther(balanceBefore)} MOVIN`);
+    let balanceAfter = balanceBefore; // Initialize balanceAfter
 
-    // Claim all rewards
-    console.log('\nClaiming all staking rewards...');
-    const tx = await movinEarnV2.connect(user).claimAllStakingRewards();
-    await tx.wait();
-    console.log('✅ Successfully claimed all staking rewards');
+    // Claim all rewards only if there are expected rewards
+    if (totalExpectedReward > 0n) {
+      console.log('\nClaiming all staking rewards...');
+      const tx = await movinEarnV2.connect(user).claimAllStakingRewards();
+      await tx.wait();
+      console.log('✅ Successfully claimed all staking rewards');
 
-    // Check user balance after claiming
-    const balanceAfter = await movinToken.balanceOf(user.address);
-    console.log(`User balance after claiming: ${ethers.formatEther(balanceAfter)} MOVIN`);
+      // Check user balance after claiming
+      balanceAfter = await movinToken.balanceOf(user.address); // Assign here
+      console.log(`User balance after claiming: ${ethers.formatEther(balanceAfter)} MOVIN`);
 
-    const actualReward = balanceAfter - balanceBefore;
-    console.log(`Actual reward received: ${ethers.formatEther(actualReward)} MOVIN`);
+      const actualReward = balanceAfter - balanceBefore;
+      console.log(`Actual reward received: ${ethers.formatEther(actualReward)} MOVIN`);
 
-    // Verify all stakes have updated lastClaimed timestamps
-    let allTimestampsUpdated = true;
+      // Verify all stakes have updated lastClaimed timestamps
+      let allTimestampsUpdated = true;
+      const latestBlock = await ethers.provider.getBlock('latest');
+      if (!latestBlock || !latestBlock.timestamp) {
+        console.log('❌ Could not get latest block timestamp for verification');
+        allTimestampsUpdated = false;
+      } else {
+        const blockTimestamp = latestBlock.timestamp;
+        console.log(`Current blockchain timestamp: ${blockTimestamp}`);
 
-    // Get the latest block timestamp to compare against
-    const latestBlock = await ethers.provider.getBlock('latest');
-    if (!latestBlock || !latestBlock.timestamp) {
-      console.log('❌ Could not get latest block timestamp for verification');
-      allTimestampsUpdated = false;
+        for (let i = 0; i < updatedStakeCount; i++) {
+          const stake = await movinEarnV2.connect(user).getUserStake(i);
+          const timeDiff = Math.abs(Number(stake.lastClaimed) - blockTimestamp);
+
+          if (timeDiff > 5) {
+            allTimestampsUpdated = false;
+            console.log(
+              `❌ Stake ${i} lastClaimed timestamp not properly updated. Expected ~${blockTimestamp}, got ${stake.lastClaimed} (diff: ${timeDiff} seconds)`
+            );
+          } else {
+            console.log(`✅ Stake ${i} lastClaimed properly updated to ${stake.lastClaimed}`);
+          }
+        }
+        if (allTimestampsUpdated) {
+          console.log("✅ All stakes' lastClaimed timestamps were properly updated");
+        }
+      }
     } else {
-      const blockTimestamp = latestBlock.timestamp;
-      console.log(`Current blockchain timestamp: ${blockTimestamp}`);
-
-      for (let i = 0; i < updatedStakeCount; i++) {
-        const stake = await movinEarnV2.connect(user).getUserStake(i);
-        const oldLastClaimed = Number(stake.lastClaimed);
-
-        // The lastClaimed should be very close to the current block timestamp
-        const timeDiff = Math.abs(Number(stake.lastClaimed) - blockTimestamp);
-
-        if (timeDiff > 5) {
-          // Allow small difference due to execution order
-          allTimestampsUpdated = false;
-          console.log(
-            `❌ Stake ${i} lastClaimed timestamp not properly updated. Expected ~${blockTimestamp}, got ${stake.lastClaimed} (diff: ${timeDiff} seconds)`
-          );
-        } else {
-          console.log(`✅ Stake ${i} lastClaimed properly updated to ${stake.lastClaimed}`);
-        }
-      }
-
-      if (allTimestampsUpdated) {
-        console.log("✅ All stakes' lastClaimed timestamps were properly updated");
-      }
-
-      // Try claiming again (should fail or claim 0)
-      console.log('\nTesting second claim (should fail or claim 0):');
-      try {
-        const tx2 = await movinEarnV2.connect(user).claimAllStakingRewards();
-        await tx2.wait();
-        console.log('Second claim succeeded, checking if rewards were 0...');
-
-        const balanceAfterSecondClaim = await movinToken.balanceOf(user.address);
-        if (balanceAfterSecondClaim === balanceAfter) {
-          console.log("✅ Second claim didn't transfer any tokens as expected");
-        } else {
-          console.log(
-            `❓ Second claim transferred ${ethers.formatEther(balanceAfterSecondClaim - balanceAfter)} tokens`
-          );
-        }
-      } catch (error: any) {
-        if (error.message.includes('NoRewardsAvailable')) {
-          console.log('✅ Second claim failed as expected (NoRewardsAvailable)');
-        } else {
-          console.log(
-            `❌ Second claim failed with unexpected error: ${error.message.split('\n')[0]}`
-          );
-        }
-      }
-
-      console.log('\n✅ Claim all staking rewards testing completed');
+      console.log(
+        '\nSkipping initial claimAllStakingRewards call as totalExpectedReward is 0 (likely due to expiration).'
+      );
     }
+
+    // Test second claim (should fail or claim 0)
+    console.log('\nTesting second claim (should fail or claim 0):');
+    try {
+      const tx2 = await movinEarnV2.connect(user).claimAllStakingRewards();
+      await tx2.wait();
+      console.log('Second claim succeeded, checking if rewards were 0...');
+
+      const balanceAfterSecondClaim = await movinToken.balanceOf(user.address);
+      if (balanceAfterSecondClaim === balanceAfter) {
+        console.log("✅ Second claim didn't transfer any tokens as expected");
+      } else {
+        console.log(
+          `❓ Second claim transferred ${ethers.formatEther(balanceAfterSecondClaim - balanceAfter)} tokens`
+        );
+      }
+    } catch (error: any) {
+      if (error.message.includes('NoRewardsAvailable')) {
+        console.log('✅ Second claim failed as expected (NoRewardsAvailable)');
+      } else {
+        console.log(
+          `❌ Second claim failed with unexpected error: ${error.message.split('\n')[0]}`
+        );
+      }
+    }
+
+    // Add test for staking reward expiration
+    console.log('\n--- ⏳ TESTING STAKING REWARD EXPIRATION (1 DAY) ---');
+    // Advance time beyond 1 day since last claim
+    console.log('⏱ Advancing time by 1 day + 1 hour...');
+    await time.increase(24 * 60 * 60 + 3600);
+
+    // Calculate rewards again (should be 0)
+    console.log('Calculating rewards after expiration (should be 0)...');
+    let expiredRewards = 0n;
+    for (let i = 0; i < updatedStakeCount; i++) {
+      const reward = await movinEarnV2.connect(user).calculateStakingReward(i);
+      if (reward > 0) {
+        console.log(`❌ Stake ${i} reward is ${ethers.formatEther(reward)} after expiration!`);
+        expiredRewards += reward;
+      }
+    }
+    if (expiredRewards === 0n) {
+      console.log('✅ All staking rewards correctly show 0 after expiration.');
+    } else {
+      console.log('❌ Some staking rewards are non-zero after expiration.');
+    }
+
+    // Attempt to claim again (should fail)
+    console.log('Attempting to claim expired staking rewards (should fail)...');
+    try {
+      await movinEarnV2.connect(user).claimAllStakingRewards();
+      console.log('❌ Claiming expired staking rewards succeeded (should have failed).');
+    } catch (error: any) {
+      if (error.message.includes('NoRewardsAvailable')) {
+        console.log(
+          '✅ Claiming expired staking rewards correctly failed with NoRewardsAvailable.'
+        );
+      } else {
+        console.log(
+          `❌ Claiming expired staking rewards failed with unexpected error: ${error.message.split('\n')[0]}`
+        );
+      }
+    }
+
+    console.log('\n✅ Claim all staking rewards testing completed');
   } catch (error) {
     console.error('❌ Error testing claimAllStakingRewards functionality:', error);
   }
@@ -816,28 +898,36 @@ async function testPremiumUserFeatures(
   console.log('\n--- 👑 TESTING PREMIUM USER FEATURES AND REWARDS ---\n');
   console.log('Testing premium user features and rewards...\n');
 
-  // Set user1 as premium
-  console.log('Setting user1 as premium...');
-  await movinEarnV2.connect(owner).setPremiumStatus(user1.address, true);
-  const isPremium = await movinEarnV2.connect(user1).getIsPremiumUser(user1.address);
-  console.log('✅ User1 premium status:', isPremium);
+  // Ensure enough time has passed since previous activity tests to allow recording large values
+  await time.increase(35 * 60); // Advance 35 minutes ( > 10000 / 300)
 
-  // Test activity rewards for premium vs regular user
+  // Set statuses
+  await movinEarnV2.connect(owner).setPremiumStatus(user1.address, true);
+  await movinEarnV2.connect(owner).setPremiumStatus(user2.address, false);
+  console.log(`✅ Set user1 premium: ${await movinEarnV2.getIsPremiumUser(user1.address)}`);
+  console.log(`✅ Set user2 premium: ${await movinEarnV2.getIsPremiumUser(user2.address)}`);
+
+  // --- Test Activity Rewards ---
   console.log('\nTesting premium user activity rewards...');
-  const [regularStepsReward, regularMetsReward] = await movinEarnV2
-    .connect(user2)
-    .getPendingRewards();
+
+  // Record identical activity for both users
+  const steps = 10000; // STEPS_THRESHOLD
+  const mets = 10; // METS_THRESHOLD
+  await movinEarnV2.connect(user1).recordActivity(steps, mets); // Premium
+  await movinEarnV2.connect(user2).recordActivity(steps, mets); // Regular
+  console.log(`✅ Recorded ${steps} steps, ${mets} METs for both users`);
+
+  // Advance time slightly (less than 1 day) to ensure rewards are claimable
+  await time.increase(60 * 60); // 1 hour
+
   const [premiumStepsReward, premiumMetsReward] = await movinEarnV2
     .connect(user1)
     .getPendingRewards();
+  const [regularStepsReward, regularMetsReward] = await movinEarnV2
+    .connect(user2)
+    .getPendingRewards();
 
-  console.log(
-    'Regular user pending rewards:',
-    ethers.formatEther(regularStepsReward),
-    'steps,',
-    ethers.formatEther(regularMetsReward),
-    'METs'
-  );
+  // Note: Premium doesn't grant bonus activity rewards in this version
   console.log(
     'Premium user pending rewards:',
     ethers.formatEther(premiumStepsReward),
@@ -845,45 +935,75 @@ async function testPremiumUserFeatures(
     ethers.formatEther(premiumMetsReward),
     'METs'
   );
-
-  // Calculate expected premium rewards (50% more)
-  const expectedPremiumStepsReward = (regularStepsReward * BigInt(150)) / BigInt(100);
-  const expectedPremiumMetsReward = (regularMetsReward * BigInt(150)) / BigInt(100);
-
   console.log(
-    'Expected premium rewards:',
-    ethers.formatEther(expectedPremiumStepsReward),
+    'Regular user pending rewards:',
+    ethers.formatEther(regularStepsReward),
     'steps,',
-    ethers.formatEther(expectedPremiumMetsReward),
-    'METs'
-  );
-  console.log(
-    'Actual premium rewards:',
-    ethers.formatEther(premiumStepsReward),
-    'steps,',
-    ethers.formatEther(premiumMetsReward),
+    ethers.formatEther(regularMetsReward),
     'METs'
   );
 
-  // Test staking rewards for premium vs regular user
+  // Note: Premium doesn't grant bonus activity rewards in this version
+  // Premium users *can* earn METs rewards, regular users cannot
+  console.log(
+    `Comparison: Premium METs (${ethers.formatEther(premiumMetsReward)}) vs Regular METs (${ethers.formatEther(regularMetsReward)})`
+  );
+  if (premiumMetsReward > 0 && regularMetsReward === 0n) {
+    console.log('✅ METs reward difference verified (Premium earns, Regular does not).');
+  } else {
+    console.log('❌ METs reward difference incorrect.');
+  }
+
+  // --- Test Staking Rewards ---
   console.log('\nTesting premium user staking rewards...');
-  const regularStakingReward = await movinEarnV2.connect(user2).calculateStakingReward(0);
-  const premiumStakingReward = await movinEarnV2.connect(user1).calculateStakingReward(0);
 
-  console.log('Regular user staking rewards:', ethers.formatEther(regularStakingReward), 'MOVIN');
+  // Ensure users have tokens and approve
+  const stakeAmount = ethers.parseEther('500');
+  await movinEarnV2.connect(owner).mintToken(user1.address, stakeAmount);
+  await movinEarnV2.connect(owner).mintToken(user2.address, stakeAmount);
+  await movinToken.connect(user1).approve(movinEarnV2.getAddress(), stakeAmount);
+  await movinToken.connect(user2).approve(movinEarnV2.getAddress(), stakeAmount);
+
+  // Create identical stakes (use a non-premium-only duration)
+  const lockMonths = 6;
+  await movinEarnV2.connect(user1).stakeTokens(stakeAmount, lockMonths); // Premium
+  await movinEarnV2.connect(user2).stakeTokens(stakeAmount, lockMonths); // Regular
+  console.log(`✅ Created identical ${lockMonths}-month stakes for both users`);
+
+  // Advance time slightly (less than 1 day)
+  await time.increase(12 * 60 * 60); // 12 hours
+
+  // Get stake indices (assuming these are the latest stakes)
+  const user1StakeCount = await movinEarnV2.connect(user1).getUserStakeCount();
+  const user2StakeCount = await movinEarnV2.connect(user2).getUserStakeCount();
+  const premiumStakeIndex = user1StakeCount - 1n;
+  const regularStakeIndex = user2StakeCount - 1n;
+
+  const premiumStakingReward = await movinEarnV2
+    .connect(user1)
+    .calculateStakingReward(premiumStakeIndex);
+  const regularStakingReward = await movinEarnV2
+    .connect(user2)
+    .calculateStakingReward(regularStakeIndex);
+
+  // Note: Premium doesn't grant bonus staking rewards in this version either
   console.log('Premium user staking rewards:', ethers.formatEther(premiumStakingReward), 'MOVIN');
+  console.log('Regular user staking rewards:', ethers.formatEther(regularStakingReward), 'MOVIN');
 
-  // Calculate expected premium staking rewards (50% more)
-  const expectedPremiumStakingReward = (regularStakingReward * BigInt(150)) / BigInt(100);
+  // Note: Premium doesn't grant bonus staking rewards in this version either
+  // Assert they are the same (or very close due to timing)
+  const stakingDiff =
+    premiumStakingReward > regularStakingReward
+      ? premiumStakingReward - regularStakingReward
+      : regularStakingReward - premiumStakingReward;
+  console.log(`Comparison: Staking rewards difference: ${ethers.formatEther(stakingDiff)}`);
+  if (stakingDiff < ethers.parseEther('0.001')) {
+    console.log('✅ Staking rewards verified (Premium and Regular are the same).');
+  } else {
+    console.log('❌ Staking rewards differ between Premium and Regular.');
+  }
 
-  console.log(
-    'Expected premium staking rewards:',
-    ethers.formatEther(expectedPremiumStakingReward),
-    'MOVIN'
-  );
-  console.log('Actual premium staking rewards:', ethers.formatEther(premiumStakingReward), 'MOVIN');
-
-  // Test premium status removal
+  // --- Test Premium Status Removal ---
   console.log('\nTesting premium status removal...');
   await movinEarnV2.connect(owner).setPremiumStatus(user1.address, false);
   const isPremiumAfterRemoval = await movinEarnV2.connect(user1).getIsPremiumUser(user1.address);

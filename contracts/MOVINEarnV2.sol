@@ -273,6 +273,14 @@ contract MOVINEarnV2 is
   // Combined getter for both rewards
   function getPendingRewards() public view returns (uint256 stepsReward, uint256 metsReward) {
     UserActivity memory activity = userActivities[msg.sender];
+
+    // Check if rewards have expired (older than 1 day)
+    if (block.timestamp > activity.lastRewardAccumulationTime + 1 days) {
+      // Rewards expired, return 0 for both
+      return (0, 0);
+    }
+
+    // Rewards are not expired, return the stored pending amounts
     return (activity.pendingStepsRewards, activity.pendingMetsRewards);
   }
 
@@ -319,11 +327,20 @@ contract MOVINEarnV2 is
       revert InvalidStakeIndex(stakeIndex, stakeCount - 1);
     }
 
-    uint256 reward = calculateStakingReward(stakeIndex);
-    // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
-    if (reward == 0 || reward < 0.001 ether) revert NoRewardsAvailable();
+    Stake storage stake = userStakes[msg.sender][stakeIndex]; // Use storage reference
 
-    userStakes[msg.sender][stakeIndex].lastClaimed = block.timestamp;
+    // Calculate reward (will be 0 if expired due to logic in calculateStakingReward)
+    uint256 reward = calculateStakingReward(stakeIndex);
+
+    // Update lastClaimed regardless of reward amount to reset the timer
+    stake.lastClaimed = block.timestamp;
+
+    // Add minimum threshold of 1 finney (0.001 ether) to prevent claiming tiny amounts
+    if (reward == 0 || reward < 0.001 ether) {
+      // If expired or reward is too small, revert with NoRewardsAvailable
+      // This avoids unnecessary token distribution attempts
+      revert NoRewardsAvailable();
+    }
 
     // Use _distributeTokens helper to mint tokens if needed
     _distributeTokens(msg.sender, reward, false);
@@ -344,6 +361,7 @@ contract MOVINEarnV2 is
     bool hasRewards = false;
 
     for (uint256 i = 0; i < stakeCount; i++) {
+      // Calculate reward (will be 0 if expired due to logic in calculateStakingReward)
       uint256 reward = calculateStakingReward(i);
       if (reward > 0) {
         totalReward += reward;
@@ -525,6 +543,12 @@ contract MOVINEarnV2 is
 
   function calculateStakingReward(uint256 stakeIndex) public view returns (uint256) {
     Stake memory stake = getUserStake(stakeIndex);
+
+    // Check for reward expiration first
+    if (block.timestamp > stake.lastClaimed + 1 days) {
+      return 0; // Rewards expired
+    }
+
     uint256 lockMonths = stake.lockDuration / 30 days;
     uint256 apr = lockPeriodMultipliers[lockMonths];
     uint256 stakedDuration = block.timestamp - stake.lastClaimed;
@@ -576,7 +600,7 @@ contract MOVINEarnV2 is
 
     UserActivity storage activity = userActivities[msg.sender];
 
-    if (block.timestamp > activity.lastRewardAccumulationTime + 30 days) {
+    if (block.timestamp > activity.lastRewardAccumulationTime + 1 days) {
       // Reset rewards if expired
       activity.pendingStepsRewards = 0;
       activity.pendingMetsRewards = 0;
