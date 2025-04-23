@@ -6,13 +6,14 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 ## Core Components
 
-### 1. Token System
+### 1. Token System (MovinTokenV2)
 
 - Built on ERC20 standard
 - Implements pausable functionality for emergency situations
-- Has a maximum supply limit
+- Has a maximum supply limit (1 trillion)
 - Supports minting and burning operations
-- Token ownership is managed by the MOVINEarnV2 contract
+- Token ownership is managed by the MOVINEarnV2 contract (or initial deployer)
+- **V2 Feature**: Token locking mechanism allowing users to lock their own tokens for a specified duration.
 
 ### 2. Staking System
 
@@ -27,8 +28,9 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Rewards are calculated based on: stake amount × APR × time staked
 - APR is determined by the lock period multiplier
 - Rewards can be claimed individually or all at once
-- No burn fee on staking rewards
-- 1% burn fee on unstaking (UNSTAKE_BURN_FEES_PERCENT)
+- **Reward Expiration**: Staking rewards expire if not claimed within 1 day of the calculation period.
+- No burn fee on claiming staking rewards
+- 1% burn fee on unstaking (`UNSTAKE_BURN_FEES_PERCENT`)
 
 ### 3. Activity Tracking System
 
@@ -49,9 +51,10 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 #### Activity Validation
 
-- Enforces per-minute rate limits
-- Validates activity input against maximum possible values
+- Enforces per-minute rate limits (300 steps/min, 5 METs/min)
+- Validates activity input against maximum daily values (30,000 steps, 500 METs)
 - Resets daily activity counts at midnight
+- **Reward Expiration**: Activity rewards expire if not claimed within 1 day of accumulation.
 - Maintains separate histories for steps and METs
 
 ### 4. Premium User System
@@ -59,13 +62,14 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Premium users can earn additional rewards through METs tracking
 - Premium status can only be set by contract owner
 - Premium status affects reward calculation and activity tracking
+- Enables staking for the 24-month lock period
 
 ### 5. Referral System
 
 - Users can refer multiple people
 - Each referee can only have one referrer
-- Referrer receives 1% of referee's rewards (ACTIVITY_REFERRAL_BONUS_PERCENT)
-- Referral bonuses are paid automatically when rewards are claimed
+- Referrer receives 1% of referee's claimed activity rewards (`REFERRAL_BONUS_PERCENT = 100` basis points)
+- Referral bonuses are paid automatically when activity rewards are claimed
 - Self-referral is not allowed
 - Referral relationships cannot be changed once established
 
@@ -74,7 +78,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Base reward rates decrease by 0.1% daily
 - Decrease applies to both steps and METs reward rates
 - Decrease is compounded daily
-- Rate decrease is tracked using rewardHalvingTimestamp
+- Rate decrease is tracked using `rewardHalvingTimestamp`
 
 ### 7. Migration System
 
@@ -109,10 +113,11 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - MAX_STEPS_PER_MINUTE: 300
 - MAX_METS_PER_MINUTE: 5
 - UNSTAKE_BURN_FEES_PERCENT: 1
-- REFERRAL_BONUS_PERCENT: 100 (1%)
-- HALVING_DECREASE_PERCENT: 1 (0.1%)
+- REFERRAL_BONUS_PERCENT: 100 (1% in basis points)
+- HALVING_DECREASE_PERCENT: 1 (Represents 0.1% daily)
 - HALVING_RATE_NUMERATOR: 999
 - HALVING_RATE_DENOMINATOR: 1000
+- REWARD_EXPIRATION_PERIOD: 1 day
 
 ### Events
 
@@ -131,6 +136,8 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Minted: Emitted when tokens are minted
 - UserDataMigrated: Emitted when user data is migrated
 - BulkMigrationCompleted: Emitted when bulk migration is completed
+- TokensLocked (from MovinTokenV2): Emitted when tokens are locked
+- TokensUnlocked (from MovinTokenV2): Emitted when tokens are unlocked
 
 ## Security Features
 
