@@ -1715,6 +1715,60 @@ describe('MOVINEarnV2', function () {
       await movinEarn.connect(owner).mintToken(user1.address, ethers.parseEther('10000'));
     });
 
+    it('Should calculate rewards for modulo 24 hours when more than 24 hours have passed', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const lockPeriod = 12; // 12 months, which has a multiplier of 12
+
+      // Stake tokens
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+
+      // Advance time by 30 hours (more than 1 day)
+      await time.increase(30 * 60 * 60);
+
+      // Calculate expected reward for 6 hours (30 % 24 = 6)
+      const apr = 12; // Multiplier for 12 months
+      const effectiveDuration = 6 * 60 * 60; // 6 hours in seconds
+      const expectedReward =
+        (stakeAmount * BigInt(apr) * BigInt(effectiveDuration)) / (BigInt(100) * BigInt(ONE_YEAR));
+
+      // Get calculated reward from contract
+      const reward = await movinEarn.connect(user1).calculateStakingReward(0);
+
+      // Allow for small rounding difference due to timestamp variations
+      const difference =
+        expectedReward > reward ? expectedReward - reward : reward - expectedReward;
+
+      expect(Number(ethers.formatEther(difference))).to.be.lessThan(0.01);
+      expect(reward).to.be.gt(0); // Reward should be greater than 0
+    });
+
+    it('Should calculate rewards for modulo 24 hours with multi-day passed periods', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const lockPeriod = 12; // 12 months, which has a multiplier of 12
+
+      // Stake tokens
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+
+      // Advance time by 74 hours (more than 3 days)
+      await time.increase(74 * 60 * 60);
+
+      // Calculate expected reward for 2 hours (74 % 24 = 2)
+      const apr = 12; // Multiplier for 12 months
+      const effectiveDuration = 2 * 60 * 60; // 2 hours in seconds
+      const expectedReward =
+        (stakeAmount * BigInt(apr) * BigInt(effectiveDuration)) / (BigInt(100) * BigInt(ONE_YEAR));
+
+      // Get calculated reward from contract
+      const reward = await movinEarn.connect(user1).calculateStakingReward(0);
+
+      // Allow for small rounding difference due to timestamp variations
+      const difference =
+        expectedReward > reward ? expectedReward - reward : reward - expectedReward;
+
+      expect(Number(ethers.formatEther(difference))).to.be.lessThan(0.01);
+      expect(reward).to.be.gt(0); // Reward should be greater than 0
+    });
+
     it('Should allow claiming staking rewards before 1 day expiration', async function () {
       const stakeAmount = ethers.parseEther('1000');
       await movinEarn.connect(user1).stakeTokens(stakeAmount, 1); // 1 month lock
@@ -1744,15 +1798,14 @@ describe('MOVINEarnV2', function () {
       // Advance time more than 1 day (e.g., 1 day + 1 hour)
       await time.increase(ONE_DAY + 3600);
 
-      // Calculate reward should return 0
+      // Calculate reward now returns modulo 24 hours (1 hour in this case)
       const reward = await movinEarn.connect(user1).calculateStakingReward(0);
-      expect(reward).to.equal(0);
+      expect(reward).to.be.gt(0); // Reward should be > 0 (for the 1 hour)
 
-      // Claim should revert
-      await expect(movinEarn.connect(user1).claimStakingRewards(0)).to.be.revertedWithCustomError(
-        movinEarn,
-        'NoRewardsAvailable'
-      );
+      // Claim should succeed now since we modified the function
+      await expect(
+        movinEarn.connect(user1).claimStakingRewards(0)
+      ).to.not.be.revertedWithCustomError(movinEarn, 'NoRewardsAvailable');
     });
 
     it('claimAllStakingRewards should claim only non-expired rewards', async function () {
@@ -1772,13 +1825,13 @@ describe('MOVINEarnV2', function () {
       // Wait another 13 hours (total time elapsed: 25 hours for stake 1, 13 hours for stake 2)
       await time.increase(13 * 60 * 60);
 
-      // Calculate expected rewards (only stake 2 should have rewards)
+      // Calculate expected rewards (now stake 1 should have partial rewards for 1 hour (25 % 24))
       const reward1 = await movinEarn.connect(user1).calculateStakingReward(0);
       const reward2 = await movinEarn.connect(user1).calculateStakingReward(1);
 
-      expect(reward1).to.equal(0); // Stake 1 should be expired
+      expect(reward1).to.be.gt(0); // Stake 1 should have rewards for 1 hour
       expect(reward2).to.be.gt(0); // Stake 2 should not be expired
-      const totalExpectedReward = reward2;
+      const totalExpectedReward = reward1 + reward2;
 
       // Claim all rewards
       const balanceBefore = await movinToken.balanceOf(user1.address);
@@ -1786,7 +1839,7 @@ describe('MOVINEarnV2', function () {
       const balanceAfter = await movinToken.balanceOf(user1.address);
       const actualTotalReward = balanceAfter - balanceBefore;
 
-      // Verify only reward2 was claimed (use tolerance)
+      // Verify rewards were claimed (use tolerance)
       const rewardDifference =
         totalExpectedReward > actualTotalReward
           ? totalExpectedReward - actualTotalReward
@@ -1802,23 +1855,22 @@ describe('MOVINEarnV2', function () {
       expect(Number(stake2.lastClaimed)).to.be.closeTo(claimTimestamp, 5);
     });
 
-    it('claimAllStakingRewards should revert if all rewards are expired', async function () {
+    it('claimAllStakingRewards should revert if all rewards are very small', async function () {
       const stakeAmount1 = ethers.parseEther('1000');
       const stakeAmount2 = ethers.parseEther('1500');
 
       await movinEarn.connect(user1).stakeTokens(stakeAmount1, 3); // 3 months
       await movinEarn.connect(user1).stakeTokens(stakeAmount2, 6); // 6 months
 
-      // Advance time more than 1 day (e.g., 1 day + 1 hour)
-      await time.increase(ONE_DAY + 3600);
+      // Advance time by 24 hours and 1 second (very small modulo)
+      await time.increase(ONE_DAY + 1);
 
-      // Calculate rewards (both should be 0)
+      // Calculate rewards (both should be very small but not 0)
       const reward1 = await movinEarn.connect(user1).calculateStakingReward(0);
       const reward2 = await movinEarn.connect(user1).calculateStakingReward(1);
-      expect(reward1).to.equal(0);
-      expect(reward2).to.equal(0);
 
-      // Claim all should revert
+      // Since we claim with a minimum threshold of 0.001 ether
+      // and 1 second of rewards is very small, claim should still revert
       await expect(movinEarn.connect(user1).claimAllStakingRewards()).to.be.revertedWithCustomError(
         movinEarn,
         'NoRewardsAvailable'

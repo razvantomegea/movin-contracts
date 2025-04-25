@@ -544,19 +544,25 @@ contract MOVINEarnV2 is
   function calculateStakingReward(uint256 stakeIndex) public view returns (uint256) {
     Stake memory stake = getUserStake(stakeIndex);
 
-    // Check for reward expiration first
-    if (block.timestamp > stake.lastClaimed + 1 days) {
-      return 0; // Rewards expired
+    uint256 timeSinceLastClaimed = block.timestamp - stake.lastClaimed;
+    uint256 effectiveDuration;
+
+    // Check if more than 1 day has passed since last claim
+    if (timeSinceLastClaimed > 1 days) {
+      // Calculate the remaining hours after taking modulo 24 hours
+      effectiveDuration = timeSinceLastClaimed % 1 days;
+    } else {
+      // Less than 24 hours passed, use the entire duration
+      effectiveDuration = timeSinceLastClaimed;
     }
 
     uint256 lockMonths = stake.lockDuration / 30 days;
     uint256 apr = lockPeriodMultipliers[lockMonths];
-    uint256 stakedDuration = block.timestamp - stake.lastClaimed;
 
     // Calculate reward: (amount * apr * effectiveDuration) / (100 * 365 days)
     // The division by 100 converts apr from percentage to decimal
     // The division by 365 days is because APR is annual
-    uint256 reward = (stake.amount * apr * stakedDuration) / (100 * 365 days);
+    uint256 reward = (stake.amount * apr * effectiveDuration) / (100 * 365 days);
 
     return reward;
   }
