@@ -39,7 +39,6 @@ contract MOVINEarnV2 is
     uint256 lockDuration;
     uint256 lastClaimed;
   }
-
   struct UserActivity {
     uint256 dailySteps;
     uint256 dailyMets;
@@ -49,12 +48,10 @@ contract MOVINEarnV2 is
     bool isPremium;
     uint256 lastUpdated;
   }
-
   struct ActivityRecord {
     uint256 value;
     uint256 timestamp;
   }
-
   struct ReferralInfo {
     address referrer;
     uint256 earnedBonus;
@@ -72,6 +69,7 @@ contract MOVINEarnV2 is
     uint256 remainingMets,
     uint256 timestamp
   );
+
   event RewardsClaimed(
     address indexed user,
     uint256 stepsReward,
@@ -84,7 +82,6 @@ contract MOVINEarnV2 is
     uint256 newMetsRate,
     uint256 nextDecreaseTimestamp
   );
-  event RewardsAccumulated(address indexed user, uint256 stepsReward, uint256 metsReward);
   event Deposit(address indexed sender, uint256 amount);
 
   event ReferralRegistered(address indexed user, address indexed referrer);
@@ -94,7 +91,6 @@ contract MOVINEarnV2 is
 
   event Minted(address indexed user, uint256 amount);
 
-  // V2: Event for bulk data migration
   event UserDataMigrated(address indexed user, bool success);
   event BulkMigrationCompleted(uint256 totalUsers, uint256 successCount);
 
@@ -121,7 +117,6 @@ contract MOVINEarnV2 is
 
   address public migrator;
 
-  // V2: New mappings - added at the end of the storage layout
   mapping(address => ReferralInfo) public userReferrals;
   mapping(address => address[]) public referrals;
 
@@ -158,130 +153,14 @@ contract MOVINEarnV2 is
     // Note: rewardHalvingTimestamp is intentionally preserved from V1 to maintain reward decrease cadence
   }
 
-  modifier onlyMigrator() {
-    require(msg.sender == migrator, 'Caller is not migrator');
-    _;
-  }
-
-  modifier whenNotPausedWithRevert() {
-    if (paused()) revert ContractPaused();
-    _;
-  }
-
   function initializeMigration(address _migrator) external onlyOwner {
     require(migrator == address(0), 'Migration already initialized');
     migrator = _migrator;
   }
 
-  function getIsPremiumUser(address user) public view returns (bool) {
-    return userActivities[user].isPremium;
-  }
-
-  function importStakes(address user, Stake[] calldata stakes) external onlyMigrator {
-    for (uint256 i = 0; i < stakes.length; i++) {
-      userStakes[user].push(stakes[i]);
-    }
-  }
-
-  function importActivityData(
-    address user,
-    uint256 steps,
-    uint256 mets,
-    uint256 lastReset
-  ) external onlyMigrator {
-    UserActivity storage activity = userActivities[user];
-    activity.dailySteps = steps;
-    activity.dailyMets = mets;
-    activity.lastUpdated = lastReset;
-  }
-
-  function importRewardData(
-    address user,
-    uint256 stepsReward,
-    uint256 metsReward
-  ) external onlyMigrator {
-    UserActivity storage activity = userActivities[user];
-    activity.pendingStepsRewards = stepsReward;
-    activity.pendingMetsRewards = metsReward;
-  }
-
-  function importPremiumStatus(address user, bool status) external onlyMigrator {
-    userActivities[user].isPremium = status;
-  }
-
-  // Add pausable functionality
-  function emergencyPause() external onlyOwner {
-    _pause();
-  }
-
-  function emergencyUnpause() external onlyOwner {
-    _unpause();
-  }
-
-  // Payable function to receive ERC20 tokens
-  function deposit(uint256 amount) public payable whenNotPausedWithRevert nonReentrant {
-    // Check if the amount is greater than zero
-    if (amount == 0) {
-      revert ZeroAmountNotAllowed();
-    }
-
-    // Check if the sender has sufficient ERC20 balance
-    uint256 senderBalance = erc20MovinToken.balanceOf(msg.sender);
-    if (senderBalance < amount) {
-      revert InsufficientBalance(senderBalance, amount);
-    }
-
-    // Transfer ERC20 tokens from the sender to this contract
-    erc20MovinToken.transferFrom(msg.sender, address(this), amount);
-
-    // Emit an event to notify of the deposit
-    emit Deposit(msg.sender, amount);
-  }
-
-  // Combined getter for user activity
-  function getUserActivity() public view returns (uint256 steps, uint256 mets) {
-    uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1; // Calculate day of year (1-365)
-    UserActivity memory activity = userActivities[msg.sender];
-    uint256 lastUpdated = ((activity.lastUpdated / 86400) % 365) + 1;
-
-    if (lastUpdated != currentDayOfYear) {
-      return (0, 0);
-    }
-
-    return (activity.dailySteps, activity.dailyMets);
-  }
-
-  function getBaseRates() public view returns (uint256 stepsRate, uint256 metsRate) {
-    uint256 currentMidnight = block.timestamp;
-    uint256 newStepsRate = baseStepsRate;
-    uint256 newMetsRate = baseMetsRate;
-
-    if (currentMidnight >= rewardHalvingTimestamp + 1 days) {
-      // Calculate number of days passed since last decrease
-      uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) / 86400;
-
-      // Apply 0.1% decrease for each day
-      for (uint256 i = 0; i < daysPassed; i++) {
-        newStepsRate = (newStepsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
-        newMetsRate = (newMetsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
-      }
-    }
-
-    return (newStepsRate, newMetsRate);
-  }
-
-  // Combined getter for both rewards
-  function getPendingRewards() public view returns (uint256 stepsReward, uint256 metsReward) {
-    UserActivity memory activity = userActivities[msg.sender];
-
-    // Check if rewards have expired (older than 1 day)
-    if (block.timestamp > activity.lastRewardAccumulationTime + 1 days) {
-      // Rewards expired, return 0 for both
-      return (0, 0);
-    }
-
-    // Rewards are not expired, return the stored pending amounts
-    return (activity.pendingStepsRewards, activity.pendingMetsRewards);
+  modifier onlyMigrator() {
+    require(msg.sender == migrator, 'Caller is not migrator');
+    _;
   }
 
   function stakeTokens(
@@ -290,24 +169,11 @@ contract MOVINEarnV2 is
   ) external nonReentrant whenNotPausedWithRevert {
     if (amount == 0) revert ZeroAmountNotAllowed();
     if (lockPeriodMultipliers[lockMonths] == 0) revert InvalidLockPeriod(lockMonths);
-
-    // Premium check for 24-month staking
-    if (lockMonths == 24 && !userActivities[msg.sender].isPremium) {
-      revert UnauthorizedAccess();
-    }
-
-    uint256 userBalance = movinToken.balanceOf(msg.sender);
-    if (userBalance < amount) revert InsufficientBalance(userBalance, amount);
-
-    uint256 allowance = movinToken.allowance(msg.sender, address(this));
-    if (allowance < amount) {
-      revert InsufficientAllowance(allowance, amount);
-    }
+    if (lockMonths == 24 && !userActivities[msg.sender].isPremium) revert UnauthorizedAccess();
 
     erc20MovinToken.transferFrom(msg.sender, address(this), amount);
 
     uint256 lockPeriod = lockMonths * 30 days;
-
     userStakes[msg.sender].push(
       Stake({
         amount: amount,
@@ -321,7 +187,7 @@ contract MOVINEarnV2 is
   }
 
   function claimStakingRewards(uint256 stakeIndex) external nonReentrant whenNotPausedWithRevert {
-    uint256 stakeCount = getUserStakeCount();
+    uint256 stakeCount = userStakes[msg.sender].length;
 
     if (stakeIndex >= stakeCount) {
       revert InvalidStakeIndex(stakeIndex, stakeCount - 1);
@@ -348,19 +214,15 @@ contract MOVINEarnV2 is
     emit StakingRewardsClaimed(msg.sender, stakeIndex, reward);
   }
 
-  /**
-   * @dev Claims staking rewards from all active stakes in one transaction
-   * Aggregates rewards from all stakes, applies burn fee once, and transfers total to user
-   */
   function claimAllStakingRewards() external nonReentrant whenNotPausedWithRevert {
-    uint256 stakeCount = getUserStakeCount();
+    uint256 stakeCount = userStakes[msg.sender].length;
     if (stakeCount == 0) revert NoRewardsAvailable();
 
     // First pass: calculate total rewards and identify stakes with rewards
     uint256 totalReward = 0;
     bool hasRewards = false;
 
-    for (uint256 i = 0; i < stakeCount; i++) {
+    for (uint256 i; i < stakeCount; ++i) {
       // Calculate reward (will be 0 if expired due to logic in calculateStakingReward)
       uint256 reward = calculateStakingReward(i);
       if (reward > 0) {
@@ -377,7 +239,7 @@ contract MOVINEarnV2 is
     uint256 currentTimestamp = block.timestamp;
 
     // Update lastClaimed timestamps for all stakes, not just ones with rewards
-    for (uint256 i = 0; i < stakeCount; i++) {
+    for (uint256 i; i < stakeCount; ++i) {
       userStakes[msg.sender][i].lastClaimed = currentTimestamp;
     }
 
@@ -389,11 +251,11 @@ contract MOVINEarnV2 is
   }
 
   function unstake(uint256 stakeIndex) external nonReentrant whenNotPausedWithRevert {
-    uint256 stakeCount = getUserStakeCount();
+    uint256 stakeCount = userStakes[msg.sender].length;
 
     if (stakeIndex >= stakeCount) revert InvalidStakeIndex(stakeIndex, stakeCount - 1);
 
-    Stake memory stake = getUserStake(stakeIndex);
+    Stake storage stake = userStakes[msg.sender][stakeIndex];
     uint256 unlockTime = stake.startTime + stake.lockDuration;
 
     // Check if the lock period is still active
@@ -401,148 +263,33 @@ contract MOVINEarnV2 is
       revert LockPeriodActive(unlockTime);
     }
 
-    _removeStake(msg.sender, stakeIndex);
     uint256 burnAmount = (stake.amount * UNSTAKE_BURN_FEES_PERCENT) / 100;
     uint256 userPayout = stake.amount - burnAmount;
-    erc20MovinToken.transfer(msg.sender, userPayout);
+    _distributeTokens(msg.sender, userPayout, false);
     movinToken.burn(burnAmount);
+    _removeStake(msg.sender, stakeIndex);
 
     emit Unstaked(msg.sender, stake.amount, stakeIndex);
   }
 
-  function registerReferral(address referrer) external whenNotPausedWithRevert {
-    if (referrer == address(0) || referrer == msg.sender) {
-      revert InvalidReferrer();
-    }
-
-    if (userReferrals[msg.sender].referrer != address(0)) {
-      revert AlreadyReferred();
-    }
-
-    // Register the referral
-    userReferrals[msg.sender].referrer = referrer;
-    referrals[referrer].push(msg.sender);
-    userReferrals[referrer].referralCount++;
-
-    emit ReferralRegistered(msg.sender, referrer);
+  function getUserStakes(address user) external view returns (Stake[] memory) {
+    return userStakes[user];
   }
 
-  function getReferralInfo(
-    address user
-  ) external view returns (address referrer, uint256 earnedBonus, uint256 referralCount) {
-    ReferralInfo memory info = userReferrals[user];
-    return (info.referrer, info.earnedBonus, info.referralCount);
+  function getUserStake(uint256 index) external view returns (Stake memory) {
+    if (index >= userStakes[msg.sender].length) {
+      revert InvalidStakeIndex(index, userStakes[msg.sender].length - 1);
+    }
+
+    return userStakes[msg.sender][index];
   }
 
-  // V2: New function to get all referrals of a user
-  function getUserReferrals(address user) external view returns (address[] memory) {
-    return referrals[user];
-  }
-
-  function recordActivity(uint256 newSteps, uint256 newMets) external whenNotPausedWithRevert {
-    // Skip validation completely if both inputs are zero
-    // This allows referral registration to work properly
-    if (newSteps <= 0 && newMets <= 0) {
-      return;
-    }
-
-    // Calculate day of year (1-365) using integer division
-    // block.timestamp / 86400 gives us days since epoch
-    // % 365 gives us day of year (0-364)
-    // + 1 gives us day of year (1-365)
-    uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
-    UserActivity storage activity = userActivities[msg.sender];
-
-    // First-time activity recording
-    bool isFirstActivity = activity.lastUpdated == 0;
-
-    // Calculate elapsed minutes (rounded down) since last update
-    uint256 elapsedMinutes = isFirstActivity ? 0 : (block.timestamp - activity.lastUpdated) / 60;
-
-    // Check time-based limits for physically possible activity
-    if (!isFirstActivity) {
-      if (elapsedMinutes > 0) {
-        // Calculate maximum possible steps in the elapsed time
-        uint256 maxPossibleSteps = elapsedMinutes * MAX_STEPS_PER_MINUTE;
-        uint256 maxPossibleMets = elapsedMinutes * MAX_METS_PER_MINUTE;
-
-        // Simpler validation that prevents underflow errors
-        if (newSteps > maxPossibleSteps || newMets > maxPossibleMets) {
-          revert InvalidActivityInput();
-        }
-      } else if (elapsedMinutes <= 0) {
-        // Prevent activity recording too frequently (must wait at least 1 minute)
-        revert InvalidActivityInput();
-      }
-    }
-
-    // Calculate last updated day of year using integer division
-    uint256 lastUpdated = ((activity.lastUpdated / 86400) % 365) + 1;
-
-    // Check if we need to reset for the new day (day of year changed)
-    if (lastUpdated != currentDayOfYear) {
-      activity.dailySteps = 0;
-      activity.dailyMets = 0;
-    }
-
-    // Update last activity timestamp
-    activity.lastUpdated = block.timestamp;
-
-    // Update activity data and store historical records
-    if (newSteps > 0) {
-      activity.dailySteps += newSteps;
-      userStepsHistory[msg.sender].push(
-        ActivityRecord({ value: newSteps, timestamp: block.timestamp })
-      );
-    }
-
-    // Only update mets for premium users
-    if (activity.isPremium && newMets > 0) {
-      activity.dailyMets += newMets;
-      userMetsHistory[msg.sender].push(
-        ActivityRecord({ value: newMets, timestamp: block.timestamp })
-      );
-    }
-
-    _checkDailyDecrease();
-
-    // Calculate rewards based on current daily totals
-    uint256 stepsReward = 0;
-
-    if (activity.dailySteps >= STEPS_THRESHOLD && activity.dailySteps <= MAX_DAILY_STEPS) {
-      // Calculate reward based on the current daily steps
-      stepsReward = (activity.dailySteps * baseStepsRate) / STEPS_THRESHOLD;
-      activity.pendingStepsRewards = stepsReward;
-    }
-
-    uint256 metsReward = 0;
-    if (
-      activity.isPremium &&
-      activity.dailyMets >= METS_THRESHOLD &&
-      activity.dailyMets <= MAX_DAILY_METS
-    ) {
-      // Calculate reward based on the current daily METs
-      metsReward = (activity.dailyMets * baseMetsRate) / METS_THRESHOLD;
-      activity.pendingMetsRewards = metsReward;
-    }
-
-    emit ActivityRecorded(
-      msg.sender,
-      newSteps,
-      newMets,
-      activity.dailySteps,
-      activity.dailyMets,
-      block.timestamp
-    );
-
-    if (stepsReward > 0 || metsReward > 0) {
-      activity.lastRewardAccumulationTime = block.timestamp;
-      emit RewardsAccumulated(msg.sender, stepsReward, metsReward);
-    }
+  function getUserStakeCount() external view returns (uint256) {
+    return userStakes[msg.sender].length;
   }
 
   function calculateStakingReward(uint256 stakeIndex) public view returns (uint256) {
-    Stake memory stake = getUserStake(stakeIndex);
+    Stake storage stake = userStakes[msg.sender][stakeIndex];
 
     uint256 timeSinceLastClaimed = block.timestamp - stake.lastClaimed;
     uint256 effectiveDuration;
@@ -567,80 +314,100 @@ contract MOVINEarnV2 is
     return reward;
   }
 
-  function getUserStakes(address user) public view returns (Stake[] memory) {
-    return userStakes[user];
-  }
-
-  function getUserStake(uint256 index) public view returns (Stake memory) {
-    if (index >= userStakes[msg.sender].length) {
-      revert InvalidStakeIndex(index, userStakes[msg.sender].length - 1);
+  function recordActivity(uint256 newSteps, uint256 newMets) external whenNotPausedWithRevert {
+    // Skip validation completely if both inputs are zero
+    // This allows referral registration to work properly
+    if (newSteps <= 0 && newMets <= 0) {
+      return;
     }
 
-    return userStakes[msg.sender][index];
-  }
+    // Calculate day of year (1-365) using integer division
+    // block.timestamp / 86400 gives us days since epoch
+    // % 365 gives us day of year (0-364)
+    // + 1 gives us day of year (1-365)
+    uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
+    UserActivity storage activity = userActivities[msg.sender];
+    uint256 activityDay = ((activity.lastUpdated / 86400) % 365) + 1;
 
-  function getUserStakeCount() public view returns (uint256) {
-    return userStakes[msg.sender].length;
-  }
-
-  // Add this helper function before claimRewards
-  function _distributeTokens(address to, uint256 amount, bool shouldMint) internal {
-    if (amount == 0) return;
-
-    uint256 contractBalance = movinToken.balanceOf(address(this));
-    uint256 remainingSupply = movinToken.MAX_SUPPLY() - movinToken.totalSupply();
-    bool canMint = remainingSupply >= amount && (shouldMint || contractBalance < amount);
-
-    if (canMint) {
-      movinToken.mint(to, amount);
-    } else if (contractBalance >= amount) {
-      erc20MovinToken.transfer(to, amount);
-    } else {
-      // If we can't mint and don't have enough balance, revert
-      revert InsufficientBalance(contractBalance, amount);
+    // Check if activity doesn't exist or timestamp doesn't match current day
+    if (activityDay != currentDayOfYear) {
+      activity.dailySteps = 0;
+      activity.dailyMets = 0;
     }
-  }
 
-  function claimRewards() external nonReentrant whenNotPausedWithRevert {
+    // Calculate elapsed minutes (rounded down) since last update
+    uint256 elapsedTime = activity.lastUpdated > 0 ? (block.timestamp - activity.lastUpdated) : 0;
+    uint256 elapsedMinutes = elapsedTime / 60;
+
+    // First-time activity recording
+    bool isFirstActivity = activity.lastUpdated == 0 ||
+      (activity.dailySteps == 0 && activity.dailyMets == 0);
+
+    // Check time-based limits for physically possible activity
+    if (!isFirstActivity) {
+      if (elapsedMinutes > 0) {
+        // Calculate maximum possible steps in the elapsed time
+        uint256 maxPossibleSteps = elapsedMinutes * MAX_STEPS_PER_MINUTE;
+        uint256 maxPossibleMets = elapsedMinutes * MAX_METS_PER_MINUTE;
+
+        // Simpler validation that prevents underflow errors
+        if (newSteps > 0 && activity.dailySteps > 0 && newSteps > maxPossibleSteps) {
+          revert InvalidActivityInput();
+        }
+
+        if (newMets > 0 && activity.dailyMets > 0 && newMets > maxPossibleMets) {
+          revert InvalidActivityInput();
+        }
+      } else if (elapsedMinutes <= 0) {
+        // Prevent activity recording too frequently (must wait at least 1 minute)
+        revert InvalidActivityInput();
+      }
+    }
+
     _checkDailyDecrease();
 
-    UserActivity storage activity = userActivities[msg.sender];
+    // Calculate rewards based on current daily totals
+    uint256 stepsReward = 0;
+    uint256 todaySteps = activity.dailySteps + newSteps;
 
-    if (block.timestamp > activity.lastRewardAccumulationTime + 1 days) {
-      // Reset rewards if expired
-      activity.pendingStepsRewards = 0;
-      activity.pendingMetsRewards = 0;
-      // Reset daily activity counts after claiming
-      activity.dailySteps = 0;
-      activity.dailyMets = 0;
-
-      revert RewardsExpired();
+    if (todaySteps >= STEPS_THRESHOLD && todaySteps <= MAX_DAILY_STEPS) {
+      // Calculate reward based on the current daily steps
+      stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
+      activity.dailySteps = STEPS_THRESHOLD;
+    } else {
+      activity.dailySteps = todaySteps;
     }
 
-    // Get pending rewards
-    uint256 totalStepsReward = activity.pendingStepsRewards;
-    uint256 totalMetsReward = activity.pendingMetsRewards;
-    uint256 totalReward = totalStepsReward + totalMetsReward;
+    uint256 metsReward = 0;
+    uint256 todayMets = activity.dailyMets + newMets;
 
-    if (totalReward == 0) revert NoRewardsAvailable();
-
-    // Reset rewards
-
-    if (activity.pendingStepsRewards > 0) {
-      activity.pendingStepsRewards = 0;
-      activity.dailySteps = 0;
+    if (activity.isPremium && todayMets >= METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
+      // Calculate reward based on the current daily METs
+      metsReward = (todayMets * baseMetsRate) / METS_THRESHOLD;
+      activity.dailyMets = METS_THRESHOLD;
+    } else {
+      activity.dailyMets = todayMets;
     }
 
-    if (activity.pendingMetsRewards > 0) {
-      activity.pendingMetsRewards = 0;
-      activity.dailyMets = 0;
-    }
+    emit ActivityRecorded(
+      msg.sender,
+      todaySteps,
+      todayMets,
+      todaySteps,
+      todayMets,
+      block.timestamp
+    );
+
+    uint256 totalReward = stepsReward + metsReward;
 
     // Send full reward to user
     _distributeTokens(msg.sender, totalReward, true);
 
+    activity.lastUpdated = block.timestamp;
+
     // Calculate and send referral bonus to referrer if exists
     address referrer = userReferrals[msg.sender].referrer;
+
     if (referrer != address(0)) {
       // Calculate referral bonus using basis points (100 = 1%)
       uint256 referralBonus = (totalReward * REFERRAL_BONUS_PERCENT) / 10000;
@@ -657,55 +424,115 @@ contract MOVINEarnV2 is
       }
     }
 
-    emit RewardsClaimed(msg.sender, totalStepsReward, totalMetsReward, totalReward);
+    emit RewardsClaimed(msg.sender, stepsReward, metsReward, totalReward);
   }
 
-  function setPremiumStatus(address user, bool status) external onlyOwner {
-    userActivities[user].isPremium = status;
-    emit PremiumStatusChanged(user, status);
+  function getTodayUserActivity() external view returns (UserActivity memory) {
+    uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
+    UserActivity storage activity = userActivities[msg.sender];
+    uint256 activityDay = ((activity.lastUpdated / 86400) % 365) + 1;
+
+    if (activityDay != currentDayOfYear) {
+      return
+        UserActivity({
+          dailySteps: 0,
+          dailyMets: 0,
+          pendingStepsRewards: 0,
+          pendingMetsRewards: 0,
+          lastRewardAccumulationTime: block.timestamp,
+          isPremium: activity.isPremium,
+          lastUpdated: block.timestamp
+        });
+    }
+
+    return activity;
   }
 
-  /**
-   * @dev Mints MovinTokens to the specified address
-   * Used in test scripts since the owner of MovinToken is now the MOVINEarnV2 contract
-   */
-  function mintToken(address to, uint256 amount) external onlyOwner {
-    movinToken.mint(to, amount);
-    emit Minted(to, amount);
+  function getBaseRates() public view returns (uint256 stepsRate, uint256 metsRate) {
+    uint256 currentMidnight = block.timestamp;
+    uint256 newStepsRate = baseStepsRate;
+    uint256 newMetsRate = baseMetsRate;
+
+    if (currentMidnight >= rewardHalvingTimestamp + 1 days) {
+      // Calculate number of days passed since last decrease
+      uint256 daysPassed = (currentMidnight - rewardHalvingTimestamp) / 86400;
+
+      // Apply 0.1% decrease for each day
+      for (uint256 i; i < daysPassed; ++i) {
+        newStepsRate = (newStepsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
+        newMetsRate = (newMetsRate * HALVING_RATE_NUMERATOR) / HALVING_RATE_DENOMINATOR; // Decrease by 0.1%
+      }
+    }
+
+    return (newStepsRate, newMetsRate);
   }
 
-  // Owner function to update lock period multipliers
-  function setLockPeriodMultiplier(uint256 months, uint256 multiplier) external onlyOwner {
-    require(months > 0, 'Invalid lock period');
-    lockPeriodMultipliers[months] = multiplier;
+  function registerReferral(address referrer) external whenNotPausedWithRevert {
+    if (referrer == address(0) || referrer == msg.sender) {
+      revert InvalidReferrer();
+    }
+
+    if (userReferrals[msg.sender].referrer != address(0)) {
+      revert AlreadyReferred();
+    }
+
+    // Register the referral
+    userReferrals[msg.sender].referrer = referrer;
+    referrals[referrer].push(msg.sender);
+    userReferrals[referrer].referralCount++;
+
+    emit ReferralRegistered(msg.sender, referrer);
   }
 
-  function _checkDailyDecrease() internal {
-    (uint256 newStepsRate, uint256 newMetsRate) = getBaseRates();
+  function getReferralInfo(
+    address user
+  ) external view returns (address referrer, uint256 earnedBonus, uint256 referralCount) {
+    ReferralInfo storage info = userReferrals[user];
+    return (info.referrer, info.earnedBonus, info.referralCount);
+  }
 
-    if (newStepsRate != baseStepsRate || newMetsRate != baseMetsRate) {
-      baseStepsRate = newStepsRate;
-      baseMetsRate = newMetsRate;
-      rewardHalvingTimestamp = block.timestamp;
+  // V2: New function to get all referrals of a user
+  function getUserReferrals(address user) external view returns (address[] memory) {
+    return referrals[user];
+  }
 
-      emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
+  function importStakes(address user, Stake[] memory stakes) internal onlyMigrator {
+    for (uint256 i; i < stakes.length; ++i) {
+      userStakes[user].push(stakes[i]);
     }
   }
 
-  function _removeStake(address user, uint256 index) internal {
-    if (index >= userStakes[user].length)
-      revert InvalidStakeIndex(index, userStakes[user].length - 1);
-    userStakes[user][index] = userStakes[user][userStakes[user].length - 1];
-    userStakes[user].pop();
+  function importActivityData(
+    address user,
+    uint256 steps,
+    uint256 mets,
+    uint256 timestamp
+  ) internal onlyMigrator {
+    userActivities[user].dailySteps = steps;
+    userActivities[user].dailyMets = mets;
+    userActivities[user].lastUpdated = timestamp;
   }
 
-  function recoverERC20(address tokenAddress) external onlyOwner {
-    if (tokenAddress == address(movinToken)) revert UnauthorizedAccess();
-    ERC20Upgradeable token = ERC20Upgradeable(tokenAddress);
-    token.transfer(owner(), token.balanceOf(address(this)));
+  function importPremiumStatus(address user, bool status) internal onlyMigrator {
+    userActivities[user].isPremium = status;
   }
 
-  function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+  function importLockPeriods(
+    uint256[] calldata months,
+    uint256[] calldata multipliers
+  ) internal onlyMigrator {
+    for (uint256 i; i < months.length; ++i) {
+      lockPeriodMultipliers[months[i]] = multipliers[i];
+    }
+  }
+
+  function importReferralNetwork(
+    address referrer,
+    address[] memory referees
+  ) internal onlyMigrator {
+    referrals[referrer] = referees;
+    userReferrals[referrer].referralCount = referees.length;
+  }
 
   // V2: Function to migrate data for multiple users at once
   function bulkMigrateUserData(address[] calldata users) external onlyOwner {
@@ -764,15 +591,6 @@ contract MOVINEarnV2 is
     // + 1 gives us day of year (1-365)
     uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
 
-    // Fix missing reward accumulation timestamp
-    if (
-      activity.lastRewardAccumulationTime == 0 &&
-      (activity.pendingStepsRewards > 0 || activity.pendingMetsRewards > 0)
-    ) {
-      // Fix missing timestamp for pending rewards
-      activity.lastRewardAccumulationTime = block.timestamp;
-    }
-
     // Calculate last updated day of year using integer division
     uint256 lastUpdated = ((activity.lastUpdated / 86400) % 365) + 1;
 
@@ -804,35 +622,12 @@ contract MOVINEarnV2 is
     }
   }
 
-  // V2: Owner function to verify reward rate consistency (can be called post-upgrade if needed)
-  function verifyRewardRates() external view onlyOwner returns (uint256, uint256, uint256) {
-    // Return current values for verification without changing them
-    return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
-  }
-
-  // V2: Special function to help migrate activity data from V1 to V2 format
-  function migrateUserActivity(address user) external onlyOwner {
-    UserActivity storage activity = userActivities[user];
-
-    // Initialize lastUpdated if not set (crucial for recordActivity validation)
-    if (activity.lastUpdated == 0) {
-      // Set to current timestamp
-      activity.lastUpdated = block.timestamp;
-    }
-
-    // Ensure we have a valid lastRewardAccumulationTime if there are pending rewards
-    if (
-      activity.lastRewardAccumulationTime == 0 &&
-      (activity.pendingStepsRewards > 0 || activity.pendingMetsRewards > 0)
-    ) {
-      activity.lastRewardAccumulationTime = block.timestamp;
-    }
-
-    emit UserDataMigrated(user, true);
-  }
-
   // V2: Function to migrate base rates and halving timestamp
-  function migrateBaseRates(uint256 newStepsRate, uint256 newMetsRate) external onlyOwner {
+  function migrateBaseRates(
+    uint256 newStepsRate,
+    uint256 newMetsRate,
+    uint256 originalHalvingTimestamp
+  ) external onlyMigrator {
     // Only migrate if rates are zero (indicating they weren't properly migrated)
     if (baseStepsRate == 0 || baseMetsRate == 0) {
       // Set both rates to 1 token (1 * 10^18 wei)
@@ -843,24 +638,133 @@ contract MOVINEarnV2 is
       baseMetsRate = newMetsRate;
     }
 
-    rewardHalvingTimestamp = block.timestamp;
+    // Preserve the original halving timestamp instead of resetting to current time
+    if (originalHalvingTimestamp > 0) {
+      rewardHalvingTimestamp = originalHalvingTimestamp;
+    } else {
+      rewardHalvingTimestamp = block.timestamp;
+    }
 
     emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
   }
 
-  function getUserStepsHistory(address user) external view returns (ActivityRecord[] memory) {
-    return userStepsHistory[user];
+  // Function to migrate lock period multipliers
+  function migrateLockPeriodMultipliers(
+    uint256[] calldata months,
+    uint256[] calldata multipliers
+  ) external onlyMigrator {
+    require(months.length == multipliers.length, 'Input arrays must have the same length');
+
+    for (uint256 i; i < months.length; ++i) {
+      lockPeriodMultipliers[months[i]] = multipliers[i];
+    }
   }
 
-  function getUserMetsHistory(address user) external view returns (ActivityRecord[] memory) {
-    return userMetsHistory[user];
+  // Add pausable functionality
+  function emergencyPause() external onlyOwner {
+    _pause();
   }
 
-  function getUserStepsHistoryLength(address user) external view returns (uint256) {
-    return userStepsHistory[user].length;
+  function emergencyUnpause() external onlyOwner {
+    _unpause();
   }
 
-  function getUserMetsHistoryLength(address user) external view returns (uint256) {
-    return userMetsHistory[user].length;
+  // Payable function to receive ERC20 tokens
+  function deposit(uint256 amount) public payable whenNotPausedWithRevert nonReentrant {
+    // Check if the amount is greater than zero
+    if (amount == 0) {
+      revert ZeroAmountNotAllowed();
+    }
+
+    // Check if the sender has sufficient ERC20 balance
+    uint256 senderBalance = erc20MovinToken.balanceOf(msg.sender);
+    if (senderBalance < amount) {
+      revert InsufficientBalance(senderBalance, amount);
+    }
+
+    // Transfer ERC20 tokens from the sender to this contract
+    erc20MovinToken.transferFrom(msg.sender, address(this), amount);
+
+    // Emit an event to notify of the deposit
+    emit Deposit(msg.sender, amount);
+  }
+
+  modifier whenNotPausedWithRevert() {
+    if (paused()) revert ContractPaused();
+    _;
+  }
+
+  function setPremiumStatus(address user, bool status) external onlyOwner {
+    userActivities[user].isPremium = status;
+    emit PremiumStatusChanged(user, status);
+  }
+
+  function mintToken(address to, uint256 amount) external onlyOwner {
+    movinToken.mint(to, amount);
+    emit Minted(to, amount);
+  }
+
+  // Owner function to update lock period multipliers
+  function setLockPeriodMultiplier(uint256 months, uint256 multiplier) external onlyOwner {
+    require(months > 0, 'Invalid lock period');
+    lockPeriodMultipliers[months] = multiplier;
+  }
+
+  function recoverERC20(address tokenAddress) external onlyOwner {
+    if (tokenAddress == address(movinToken)) revert UnauthorizedAccess();
+    ERC20Upgradeable token = ERC20Upgradeable(tokenAddress);
+    token.transfer(owner(), token.balanceOf(address(this)));
+  }
+
+  // V2: Owner function to verify reward rate consistency (can be called post-upgrade if needed)
+  function verifyRewardRates() external view onlyOwner returns (uint256, uint256, uint256) {
+    // Return current values for verification without changing them
+    return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
+  }
+
+  function getIsPremiumUser(address user) external view returns (bool) {
+    return userActivities[user].isPremium;
+  }
+
+  function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+  function _checkDailyDecrease() internal {
+    (uint256 newStepsRate, uint256 newMetsRate) = getBaseRates();
+
+    if (newStepsRate != baseStepsRate || newMetsRate != baseMetsRate) {
+      baseStepsRate = newStepsRate;
+      baseMetsRate = newMetsRate;
+      rewardHalvingTimestamp = block.timestamp;
+
+      emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
+    }
+  }
+
+  function _removeStake(address user, uint256 index) internal {
+    if (index >= userStakes[user].length) {
+      revert InvalidStakeIndex(index, userStakes[user].length - 1);
+    }
+
+    // Efficient array deletion without preserving order
+    if (index != userStakes[user].length - 1) {
+      userStakes[user][index] = userStakes[user][userStakes[user].length - 1];
+    }
+
+    userStakes[user].pop();
+  }
+
+  function _distributeTokens(address to, uint256 amount, bool shouldMint) internal {
+    if (amount == 0) return;
+
+    uint256 contractBalance = movinToken.balanceOf(address(this));
+    uint256 remainingSupply = movinToken.MAX_SUPPLY() - movinToken.totalSupply();
+
+    if (shouldMint && remainingSupply >= amount) {
+      movinToken.mint(to, amount);
+    } else if (contractBalance >= amount) {
+      erc20MovinToken.transfer(to, amount);
+    } else {
+      revert InsufficientBalance(contractBalance, amount);
+    }
   }
 }

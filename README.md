@@ -4,7 +4,7 @@ This project contains the smart contracts for the Movin ecosystem, built with So
 
 ## Contracts
 
-### MovinToken (MOVIN) / MovinTokenV2
+### MovinToken (MOVIN) / MovinToken
 
 An upgradable ERC20 token with the following features:
 
@@ -187,11 +187,11 @@ In the console, you can interact with your contracts:
 
 ```javascript
 // Get contract instances
-const MovinTokenV2 = await ethers.getContractFactory('MovinTokenV2');
+const MovinToken = await ethers.getContractFactory('MovinToken');
 const MOVINEarnV2 = await ethers.getContractFactory('MOVINEarnV2');
 
 // Attach to deployed contracts (Update with your V2 deployment addresses)
-const token = await MovinTokenV2.attach('YOUR_MOVIN_TOKEN_V2_PROXY_ADDRESS');
+const token = await MovinToken.attach('YOUR_MOVIN_TOKEN_V2_PROXY_ADDRESS');
 const earnV2 = await MOVINEarnV2.attach('YOUR_MOVIN_EARN_V2_PROXY_ADDRESS');
 
 // Get accounts
@@ -282,7 +282,7 @@ Make sure to update the proxy addresses in each script first with the addresses 
 ### Smart Contract Architecture
 
 ```
-MovinToken / MovinTokenV2
+MovinToken / MovinToken
 ├── ERC20Upgradeable
 ├── ERC20PausableUpgradeable
 ├── ERC20BurnableUpgradeable
@@ -309,7 +309,7 @@ When upgrading from a previous version (e.g., V1) to MOVINEarnV2:
 ### Testing the Contract
 
 - `scripts/interactV2.ts` - For comprehensive testing of V2 contract interactions.
-- Test suites (`test/MOVINEarnV2.test.ts`, `test/MovinTokenV2.test.ts` if exists) - For automated unit/integration tests.
+- Test suites (`test/MOVINEarnV2.test.ts`, `test/MovinToken.test.ts` if exists) - For automated unit/integration tests.
 - `scripts/check-migration.ts` - For checking the migration status (if applicable).
 - `scripts/test-activity-record.ts` - For focused testing of activity recording features.
 

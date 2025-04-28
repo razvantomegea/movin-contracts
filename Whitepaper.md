@@ -6,7 +6,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 ## Core Components
 
-### 1. Token System (MovinTokenV2)
+### 1. Token System (MovinToken)
 
 - Built on ERC20 standard
 - Implements pausable functionality for emergency situations
@@ -36,26 +36,22 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 #### Steps Tracking
 
-- Daily steps threshold: 10,000 steps
-- Maximum daily steps: 30,000 steps
-- Rate limit: 300 steps per minute
-- Rewards: 1 MVN per 10,000 steps
+- Daily steps threshold: 10,000 steps (no rewards below and no more steps adding above)
+- After each claim rewards, steps should remain at 10,000
+- Maximum daily steps: 30,000 steps (no rewards above)
+- Rate limit: 300 steps per minute (no rewards for more than 300 steps per minute)
+- Rewards: 1 MVN per 10,000 steps (0.1% decrease per day)
+- Resets at midnight ((based on activity timestamp))
 
 #### METs (Metabolic Equivalent of Task) Tracking
 
-- Daily METs threshold: 10 METs
-- Maximum daily METs: 500 METs
-- Rate limit: 5 METs per minute
+- Daily METs threshold: 10 METs (no rewards below and no more METs adding above)
+- After each claim rewards, METs should remain at 10
+- Maximum daily METs: 500 METs (no rewards above)
+- Rate limit: 5 METs per minute (no rewards for more than 5 mets per minute)
 - Only available for premium users
-- Rewards: 1 MVN per 10 METs
-
-#### Activity Validation
-
-- Enforces per-minute rate limits (300 steps/min, 5 METs/min)
-- Validates activity input against maximum daily values (30,000 steps, 500 METs)
-- Resets daily activity counts at midnight
-- **Reward Expiration**: Activity rewards expire if not claimed within 1 day of accumulation.
-- Maintains separate histories for steps and METs
+- Rewards: 1 MVN per 10 METs (0.1% decrease per day)
+- Resets at midnight (based on activity timestamp)
 
 ### 4. Premium User System
 
@@ -136,8 +132,8 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Minted: Emitted when tokens are minted
 - UserDataMigrated: Emitted when user data is migrated
 - BulkMigrationCompleted: Emitted when bulk migration is completed
-- TokensLocked (from MovinTokenV2): Emitted when tokens are locked
-- TokensUnlocked (from MovinTokenV2): Emitted when tokens are unlocked
+- TokensLocked (from MovinToken): Emitted when tokens are locked
+- TokensUnlocked (from MovinToken): Emitted when tokens are unlocked
 
 ## Security Features
 
