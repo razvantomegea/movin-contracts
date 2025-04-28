@@ -1,6 +1,6 @@
-import { ethers } from "hardhat";
-import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from "./contract-addresses";
-import * as dotenv from "dotenv";
+import { ethers } from 'hardhat';
+import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from './contract-addresses';
+import * as dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -8,27 +8,27 @@ async function main() {
   // Get private key from .env
   const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) {
-    throw new Error("Private key not found in .env file");
+    throw new Error('Private key not found in .env file');
   }
 
   // Create provider and wallet
   const provider = ethers.provider;
   const wallet = new ethers.Wallet(privateKey, provider);
-  console.log("Using wallet address:", wallet.address);
+  console.log('Using wallet address:', wallet.address);
 
   // Get contract instances
-  const movinEarnV2 = await ethers.getContractAt("MOVINEarnV2", MOVIN_EARN_PROXY_ADDRESS, wallet);
-  const movinToken = await ethers.getContractAt("MovinToken", MOVIN_TOKEN_PROXY_ADDRESS, wallet);
+  const movinEarnV2 = await ethers.getContractAt('MOVINEarnV2', MOVIN_EARN_PROXY_ADDRESS, wallet);
+  const movinToken = await ethers.getContractAt('MovinToken', MOVIN_TOKEN_PROXY_ADDRESS, wallet);
 
   // Amount to deposit (in ether units - will be converted to wei)
-  const depositAmount = ethers.parseEther("90000000");
+  const depositAmount = ethers.parseEther('90000000');
 
   // Check token balance
   const tokenBalance = await movinToken.balanceOf(wallet.address);
   console.log(`Token balance: ${ethers.formatEther(tokenBalance)} MOVIN`);
 
   if (tokenBalance < depositAmount) {
-    console.log("❌ Insufficient token balance for deposit");
+    console.log('❌ Insufficient token balance for deposit');
     return;
   }
 
@@ -45,9 +45,11 @@ async function main() {
   // console.log("✅ Deposit successful");
 
   const userActivity = await movinEarnV2.userActivities(wallet.address);
-  console.log(`User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.isPremium} is premium, ${userActivity.lastUpdated} last updated`);
+  console.log(
+    `User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.isPremium} is premium, ${userActivity.lastUpdated} last updated`
+  );
 
-  const latestBlock = await provider.getBlock("latest");
+  const latestBlock = await provider.getBlock('latest');
   const latestBlockTimestamp = Number(latestBlock?.timestamp);
   console.log(`Latest block: ${latestBlockTimestamp}`);
   console.log(`Latest block date: ${new Date(latestBlockTimestamp * 1000).toLocaleString()}`);
@@ -57,15 +59,15 @@ async function main() {
   console.log(`Reward halving timestamp (raw): ${rewardHalvingTimestamp}`);
   console.log(`Reward halving date: ${rewardHalvingDate.toLocaleString()}`);
 
-  const pendingRewards = await movinEarnV2.connect(wallet).getPendingRewards();
-  console.log(`Pending rewards: ${ethers.formatEther(pendingRewards[0])} steps, ${ethers.formatEther(pendingRewards[1])} mets`);
-
   // Verify deposit by checking contract balance
   const contractBalance = await movinToken.balanceOf(MOVIN_EARN_PROXY_ADDRESS);
   console.log(`Contract token balance: ${ethers.formatEther(contractBalance)} MOVIN`);
+
+  const stakeCount = await movinEarnV2.connect(wallet).getUserStakeCount();
+  console.log(`Stake count: ${stakeCount}`);
 }
 
-main().catch((error) => {
-  console.error("❌ Script failed:", error);
+main().catch(error => {
+  console.error('❌ Script failed:', error);
   process.exitCode = 1;
 });
