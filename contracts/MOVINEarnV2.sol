@@ -370,22 +370,24 @@ contract MOVINEarnV2 is
     uint256 stepsReward = 0;
     uint256 todaySteps = activity.dailySteps + newSteps;
 
-    if (todaySteps >= STEPS_THRESHOLD && todaySteps <= MAX_DAILY_STEPS) {
-      // Calculate reward based on the current daily steps
+    if (activity.dailySteps >= STEPS_THRESHOLD && activity.dailySteps < MAX_DAILY_STEPS) {
+      stepsReward = (newSteps * baseStepsRate) / STEPS_THRESHOLD;
+    } else if (todaySteps >= STEPS_THRESHOLD && todaySteps <= MAX_DAILY_STEPS) {
       stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
-      activity.dailySteps = STEPS_THRESHOLD;
-    } else {
-      activity.dailySteps = todaySteps;
     }
+
+    activity.dailySteps = todaySteps;
 
     uint256 metsReward = 0;
     uint256 todayMets = activity.dailyMets + newMets;
 
-    if (activity.isPremium && todayMets >= METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
-      // Calculate reward based on the current daily METs
-      metsReward = (todayMets * baseMetsRate) / METS_THRESHOLD;
-      activity.dailyMets = METS_THRESHOLD;
-    } else {
+    if (activity.isPremium) {
+      if (activity.dailyMets >= METS_THRESHOLD && activity.dailyMets < MAX_DAILY_METS) {
+        metsReward = (newMets * baseMetsRate) / METS_THRESHOLD;
+      } else if (todayMets >= METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
+        metsReward = (todayMets * baseMetsRate) / METS_THRESHOLD;
+      }
+
       activity.dailyMets = todayMets;
     }
 

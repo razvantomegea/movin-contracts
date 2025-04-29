@@ -557,7 +557,7 @@ describe('MOVINEarnV2', function () {
       // Verify activity was recorded but no rewards
       const activity = await movinEarn.connect(user2).getTodayUserActivity();
       expect(activity.dailySteps).to.equal(0);
-      expect(activity.dailyMets).to.equal(METS_THRESHOLD);
+      expect(activity.dailyMets).to.equal(0);
     });
 
     it('Should correctly record both steps and METs activity', async function () {
@@ -593,8 +593,8 @@ describe('MOVINEarnV2', function () {
 
       // Verify activity was recorded at threshold values
       const activity = await movinEarn.connect(user1).getTodayUserActivity();
-      expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
-      expect(activity.dailyMets).to.equal(METS_THRESHOLD);
+      expect(activity.dailySteps).to.equal(aboveThresholdSteps);
+      expect(activity.dailyMets).to.equal(aboveThresholdMETs);
     });
 
     it('Should reject activity that exceeds rate limits', async function () {
