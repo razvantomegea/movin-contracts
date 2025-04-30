@@ -288,6 +288,47 @@ contract MOVINEarnV2 is
     return userStakes[msg.sender].length;
   }
 
+  function calculateActivityRewards(
+    uint256 newSteps,
+    uint256 newMets
+  ) public view returns (uint256, uint256, uint256, uint256) {
+    UserActivity storage activity = userActivities[msg.sender];
+    uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
+    uint256 activityDay = ((activity.lastUpdated / 86400) % 365) + 1;
+    uint256 dailySteps = activity.dailySteps;
+    uint256 dailyMets = activity.dailyMets;
+
+    // Check if activity doesn't exist or timestamp doesn't match current day
+    if (activityDay != currentDayOfYear) {
+      dailySteps = 0;
+      dailyMets = 0;
+    }
+
+    uint256 stepsReward = 0;
+    uint256 todaySteps = dailySteps + newSteps;
+
+    if (dailySteps >= STEPS_THRESHOLD && dailySteps < MAX_DAILY_STEPS) {
+      stepsReward = (newSteps * baseStepsRate) / STEPS_THRESHOLD;
+    } else if (todaySteps >= STEPS_THRESHOLD && todaySteps <= MAX_DAILY_STEPS) {
+      stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
+    }
+
+    if (!activity.isPremium) {
+      return (stepsReward, 0, todaySteps, 0);
+    }
+
+    uint256 metsReward = 0;
+    uint256 todayMets = dailyMets + newMets;
+
+    if (dailyMets >= METS_THRESHOLD && dailyMets < MAX_DAILY_METS) {
+      metsReward = (newMets * baseMetsRate) / METS_THRESHOLD;
+    } else if (todayMets >= METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
+      metsReward = (todayMets * baseMetsRate) / METS_THRESHOLD;
+    }
+
+    return (stepsReward, metsReward, todaySteps, todayMets);
+  }
+
   function calculateStakingReward(uint256 stakeIndex) public view returns (uint256) {
     Stake storage stake = userStakes[msg.sender][stakeIndex];
 
@@ -367,29 +408,15 @@ contract MOVINEarnV2 is
     _checkDailyDecrease();
 
     // Calculate rewards based on current daily totals
-    uint256 stepsReward = 0;
-    uint256 todaySteps = activity.dailySteps + newSteps;
-
-    if (activity.dailySteps >= STEPS_THRESHOLD && activity.dailySteps < MAX_DAILY_STEPS) {
-      stepsReward = (newSteps * baseStepsRate) / STEPS_THRESHOLD;
-    } else if (todaySteps >= STEPS_THRESHOLD && todaySteps <= MAX_DAILY_STEPS) {
-      stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
-    }
+    (
+      uint256 stepsReward,
+      uint256 metsReward,
+      uint256 todaySteps,
+      uint256 todayMets
+    ) = calculateActivityRewards(newSteps, newMets);
 
     activity.dailySteps = todaySteps;
-
-    uint256 metsReward = 0;
-    uint256 todayMets = activity.dailyMets + newMets;
-
-    if (activity.isPremium) {
-      if (activity.dailyMets >= METS_THRESHOLD && activity.dailyMets < MAX_DAILY_METS) {
-        metsReward = (newMets * baseMetsRate) / METS_THRESHOLD;
-      } else if (todayMets >= METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
-        metsReward = (todayMets * baseMetsRate) / METS_THRESHOLD;
-      }
-
-      activity.dailyMets = todayMets;
-    }
+    activity.dailyMets = todayMets;
 
     emit ActivityRecorded(
       msg.sender,
