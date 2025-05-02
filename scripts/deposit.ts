@@ -46,7 +46,7 @@ async function main() {
 
   const userActivity = await movinEarnV2.userActivities(wallet.address);
   console.log(
-    `User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.isPremium} is premium, ${userActivity.lastUpdated} last updated`
+    `User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.lastUpdated} last updated`
   );
 
   const latestBlock = await provider.getBlock('latest');
@@ -65,6 +65,9 @@ async function main() {
 
   const stakeCount = await movinEarnV2.connect(wallet).getUserStakeCount();
   console.log(`Stake count: ${stakeCount}`);
+
+  const premiumStatus = await movinEarnV2.connect(wallet).getPremiumStatus();
+  console.log(`Premium status: ${premiumStatus}`);
 }
 
 main().catch(error => {

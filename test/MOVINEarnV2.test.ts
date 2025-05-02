@@ -88,7 +88,7 @@ describe('MOVINEarnV2', function () {
       const stakeAmount = ethers.parseEther('100');
 
       // Set user1 as premium to allow staking for 24 months
-      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      await movinEarn.connect(user1).setPremiumStatus(true, 1000);
 
       // Test each valid lock period
       const lockPeriods = [1, 3, 6, 12, 24];
@@ -129,8 +129,8 @@ describe('MOVINEarnV2', function () {
       const stakeAmount = ethers.parseEther('100');
 
       // Set user1 as premium and user2 as non-premium
-      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
-      await movinEarn.connect(owner).setPremiumStatus(user2.address, false);
+      await movinEarn.connect(user1).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user2).setPremiumStatus(false, 0);
 
       // Approve tokens for both users
       await movinToken.connect(user2).approve(await movinEarn.getAddress(), ONE_THOUSAND_TOKENS);
@@ -495,7 +495,7 @@ describe('MOVINEarnV2', function () {
   describe('Activity recording and rewards', function () {
     beforeEach(async function () {
       // Set user1 as premium
-      await movinEarn.connect(owner).setPremiumStatus(user1.address, true);
+      await movinEarn.connect(user1).setPremiumStatus(true, 1000);
     });
 
     it('Should correctly record steps activity and distribute rewards', async function () {
@@ -543,7 +543,7 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user2.address);
 
       // Ensure user2 is not premium
-      await movinEarn.connect(owner).setPremiumStatus(user2.address, false);
+      await movinEarn.connect(user2).setPremiumStatus(false, 0);
 
       // Record exactly the threshold METs (10)
       await movinEarn.connect(user2).recordActivity(0, METS_THRESHOLD);
@@ -744,7 +744,7 @@ describe('MOVINEarnV2', function () {
       const refereeInitialBalance = await movinToken.balanceOf(user2.address);
 
       // Set user2 as premium to get both steps and METs rewards
-      await movinEarn.connect(owner).setPremiumStatus(user2.address, true);
+      await movinEarn.connect(user2).setPremiumStatus(true, 1000);
 
       // Record activity for referee (user2)
       await movinEarn.connect(user2).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
@@ -907,7 +907,7 @@ describe('MOVINEarnV2', function () {
       expect(referrer4).to.equal(user1.address);
 
       // Verify rewards are properly distributed to referrer
-      await movinEarn.connect(owner).setPremiumStatus(user2.address, true);
+      await movinEarn.connect(user2).setPremiumStatus(true, 1000);
 
       // Get balances before activity
       const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
@@ -944,7 +944,7 @@ describe('MOVINEarnV2', function () {
       await movinEarn.connect(user2).registerReferral(user1.address);
 
       // Set user2 as premium to get METs rewards
-      await movinEarn.connect(owner).setPremiumStatus(user2.address, true);
+      await movinEarn.connect(user2).setPremiumStatus(true, 1000);
 
       // Get balances before activity
       const user2BalanceBefore = await movinToken.balanceOf(user2.address);
@@ -998,31 +998,6 @@ describe('MOVINEarnV2', function () {
 
       // Staking should work now
       await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 1);
-    });
-
-    it('Should only allow owner to set premium status', async function () {
-      // Verify initial premium status is false
-      expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(false);
-
-      // Try to set premium status as non-owner (should fail)
-      await expect(movinEarn.connect(user1).setPremiumStatus(user2.address, true)).to.be.reverted; // Will revert with an Ownable error
-
-      // Verify status didn't change
-      expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(false);
-
-      // Set premium status as owner (should succeed)
-      await expect(movinEarn.connect(owner).setPremiumStatus(user2.address, true))
-        .to.emit(movinEarn, 'PremiumStatusChanged')
-        .withArgs(user2.address, true);
-
-      // Verify status changed
-      expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(true);
-
-      // Change status back as owner
-      await movinEarn.connect(owner).setPremiumStatus(user2.address, false);
-
-      // Verify status changed back
-      expect(await movinEarn.getIsPremiumUser(user2.address)).to.equal(false);
     });
   });
 });

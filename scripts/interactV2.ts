@@ -791,7 +791,7 @@ async function testPremiumUserFeatures(
 
   // --- Test Premium Status Removal ---
   console.log('\nTesting premium status removal...');
-  await movinEarnV2.connect(owner).setPremiumStatus(user1.address, false);
+  await movinEarnV2.connect(owner).setPremiumStatus(user1.address, false, 0);
   const isPremiumAfterRemoval = await movinEarnV2.connect(user1).getIsPremiumUser(user1.address);
   console.log('✅ User1 premium status after removal:', isPremiumAfterRemoval);
 

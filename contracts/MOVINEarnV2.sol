@@ -23,7 +23,7 @@ error UnauthorizedAccess();
 error ContractPaused();
 error AlreadyReferred();
 error InvalidReferrer();
-
+error InvalidPremiumAmount();
 contract MOVINEarnV2 is
   UUPSUpgradeable,
   Ownable2StepUpgradeable,
@@ -56,6 +56,12 @@ contract MOVINEarnV2 is
     address referrer;
     uint256 earnedBonus;
     uint256 referralCount;
+  }
+
+  struct PremiumUserData {
+    bool status;
+    uint256 paid;
+    uint256 expiration;
   }
 
   event Staked(address indexed user, uint256 amount, uint256 lockPeriod, uint256 stakeIndex);
@@ -91,14 +97,14 @@ contract MOVINEarnV2 is
 
   event Minted(address indexed user, uint256 amount);
 
-  event UserDataMigrated(address indexed user, bool success);
-  event BulkMigrationCompleted(uint256 totalUsers, uint256 successCount);
-
   mapping(uint256 => uint256) public lockPeriodMultipliers;
   mapping(address => Stake[]) public userStakes;
   mapping(address => UserActivity) public userActivities;
   mapping(address => ActivityRecord[]) public userStepsHistory;
   mapping(address => ActivityRecord[]) public userMetsHistory;
+  mapping(address => uint256) public userSteps;
+  mapping(address => uint256) public userMets;
+  mapping(address => PremiumUserData) public userPremiumData;
 
   uint256 public constant STEPS_THRESHOLD = 10_000;
   uint256 public constant METS_THRESHOLD = 10;
@@ -114,6 +120,10 @@ contract MOVINEarnV2 is
   uint256 public constant HALVING_DECREASE_PERCENT = 1; // Represents 0.1% (used for documentation only)
   uint256 public constant HALVING_RATE_NUMERATOR = 999; // 999/1000 = 0.999 (99.9%)
   uint256 public constant HALVING_RATE_DENOMINATOR = 1000; // For 0.1% daily decrease
+  uint256 public constant PREMIUM_EXPIRATION_TIME_MONTHLY = 30 days;
+  uint256 public constant PREMIUM_EXPIRATION_TIME_YEARLY = 365 days;
+  uint256 public constant PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT = 100; // 100 MVN per month
+  uint256 public constant PREMIUM_EXPIRATION_TIME_YEARLY_AMOUNT = 1000; // 1000 MVN per year
 
   address public migrator;
 
@@ -169,7 +179,7 @@ contract MOVINEarnV2 is
   ) external nonReentrant whenNotPausedWithRevert {
     if (amount == 0) revert ZeroAmountNotAllowed();
     if (lockPeriodMultipliers[lockMonths] == 0) revert InvalidLockPeriod(lockMonths);
-    if (lockMonths == 24 && !userActivities[msg.sender].isPremium) revert UnauthorizedAccess();
+    if (lockMonths == 24 && !userPremiumData[msg.sender].status) revert UnauthorizedAccess();
 
     erc20MovinToken.transferFrom(msg.sender, address(this), amount);
 
@@ -313,7 +323,7 @@ contract MOVINEarnV2 is
       stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
     }
 
-    if (!activity.isPremium) {
+    if (!userPremiumData[msg.sender].status) {
       return (stepsReward, 0, todaySteps, 0);
     }
 
@@ -417,6 +427,10 @@ contract MOVINEarnV2 is
 
     activity.dailySteps = todaySteps;
     activity.dailyMets = todayMets;
+
+    // Update the total steps and METs counters for the user
+    userSteps[msg.sender] += newSteps;
+    userMets[msg.sender] += newMets;
 
     emit ActivityRecorded(
       msg.sender,
@@ -525,138 +539,8 @@ contract MOVINEarnV2 is
     return referrals[user];
   }
 
-  function importStakes(address user, Stake[] memory stakes) internal onlyMigrator {
-    for (uint256 i; i < stakes.length; ++i) {
-      userStakes[user].push(stakes[i]);
-    }
-  }
-
-  function importActivityData(
-    address user,
-    uint256 steps,
-    uint256 mets,
-    uint256 timestamp
-  ) internal onlyMigrator {
-    userActivities[user].dailySteps = steps;
-    userActivities[user].dailyMets = mets;
-    userActivities[user].lastUpdated = timestamp;
-  }
-
-  function importPremiumStatus(address user, bool status) internal onlyMigrator {
-    userActivities[user].isPremium = status;
-  }
-
-  function importLockPeriods(
-    uint256[] calldata months,
-    uint256[] calldata multipliers
-  ) internal onlyMigrator {
-    for (uint256 i; i < months.length; ++i) {
-      lockPeriodMultipliers[months[i]] = multipliers[i];
-    }
-  }
-
-  function importReferralNetwork(
-    address referrer,
-    address[] memory referees
-  ) internal onlyMigrator {
-    referrals[referrer] = referees;
-    userReferrals[referrer].referralCount = referees.length;
-  }
-
-  // V2: Function to migrate data for multiple users at once
-  function bulkMigrateUserData(address[] calldata users) external onlyOwner {
-    uint256 successCount = 0;
-
-    for (uint256 i = 0; i < users.length; i++) {
-      address user = users[i];
-      bool success = true;
-
-      try this.migrateUserData(user) {
-        successCount++;
-        emit UserDataMigrated(user, true);
-      } catch {
-        emit UserDataMigrated(user, false);
-        success = false;
-      }
-    }
-
-    emit BulkMigrationCompleted(users.length, successCount);
-  }
-
-  // V2: Function to migrate a single user's data
-  function migrateUserData(address user) external onlyOwner {
-    bool stakesMigrated = false;
-    bool activityMigrated = false;
-    bool referralMigrated = false;
-
-    // First verify and migrate stakes data if needed
-    Stake[] storage stakes = userStakes[user];
-    // Ensure stakes are valid - if stake amount is 0, it's likely corrupted
-    for (uint256 i = 0; i < stakes.length; i++) {
-      if (stakes[i].amount == 0 || stakes[i].startTime == 0) {
-        // Remove invalid stake to prevent issues
-        _removeStake(user, i);
-        i--; // Adjust index after removal
-      } else if (stakes[i].lastClaimed == 0) {
-        // Fix stake with missing lastClaimed
-        stakes[i].lastClaimed = stakes[i].startTime;
-      }
-    }
-    stakesMigrated = true;
-
-    // Verify and migrate activity data
-    UserActivity storage activity = userActivities[user];
-
-    // Initialize lastUpdated to current timestamp if not set (crucial for V2)
-    if (activity.lastUpdated == 0) {
-      // In V1, we used lastMidnightReset and lastHourlyReset
-      // Set lastUpdated to block.timestamp for new structure
-      activity.lastUpdated = block.timestamp;
-    }
-
-    // Calculate day of year (1-365) using integer division
-    // block.timestamp / 86400 gives us days since epoch
-    // % 365 gives us day of year (0-364)
-    // + 1 gives us day of year (1-365)
-    uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
-
-    // Calculate last updated day of year using integer division
-    uint256 lastUpdated = ((activity.lastUpdated / 86400) % 365) + 1;
-
-    // Reset daily activity if it's from a previous day
-    if (lastUpdated != currentDayOfYear) {
-      activity.dailySteps = 0;
-      activity.dailyMets = 0;
-      activity.lastUpdated = block.timestamp;
-    }
-
-    activityMigrated = true;
-
-    // Migrate referral data
-    ReferralInfo storage referralInfo = userReferrals[user];
-
-    // Check if user has referrals but no count is recorded
-    address[] storage currentUserReferrals = referrals[user];
-    if (currentUserReferrals.length > 0 && referralInfo.referralCount == 0) {
-      referralInfo.referralCount = currentUserReferrals.length;
-    }
-    referralMigrated = true;
-
-    // Emit success only if all components were migrated successfully
-    if (stakesMigrated && activityMigrated && referralMigrated) {
-      emit UserDataMigrated(user, true);
-    } else {
-      emit UserDataMigrated(user, false);
-      revert('Migration failed');
-    }
-  }
-
   // V2: Function to migrate base rates and halving timestamp
-  function migrateBaseRates(
-    uint256 newStepsRate,
-    uint256 newMetsRate,
-    uint256 originalHalvingTimestamp
-  ) external onlyMigrator {
+  function migrateBaseRates(uint256 newStepsRate, uint256 newMetsRate) external onlyMigrator {
     // Only migrate if rates are zero (indicating they weren't properly migrated)
     if (baseStepsRate == 0 || baseMetsRate == 0) {
       // Set both rates to 1 token (1 * 10^18 wei)
@@ -667,13 +551,7 @@ contract MOVINEarnV2 is
       baseMetsRate = newMetsRate;
     }
 
-    // Preserve the original halving timestamp instead of resetting to current time
-    if (originalHalvingTimestamp > 0) {
-      rewardHalvingTimestamp = originalHalvingTimestamp;
-    } else {
-      rewardHalvingTimestamp = block.timestamp;
-    }
-
+    rewardHalvingTimestamp = block.timestamp;
     emit RewardsRateDecreased(baseStepsRate, baseMetsRate, rewardHalvingTimestamp + 1 days);
   }
 
@@ -723,9 +601,28 @@ contract MOVINEarnV2 is
     _;
   }
 
-  function setPremiumStatus(address user, bool status) external onlyOwner {
-    userActivities[user].isPremium = status;
-    emit PremiumStatusChanged(user, status);
+  function setPremiumStatus(bool status, uint256 amount) external whenNotPausedWithRevert {
+    if (status) {
+      uint256 expirationTime;
+
+      if (amount == PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT) {
+        expirationTime = block.timestamp + PREMIUM_EXPIRATION_TIME_MONTHLY;
+      } else if (amount == PREMIUM_EXPIRATION_TIME_YEARLY_AMOUNT) {
+        expirationTime = block.timestamp + PREMIUM_EXPIRATION_TIME_YEARLY;
+      } else {
+        revert InvalidPremiumAmount();
+      }
+
+      userPremiumData[msg.sender].status = status;
+      userPremiumData[msg.sender].paid = amount;
+      userPremiumData[msg.sender].expiration = expirationTime;
+    } else {
+      userPremiumData[msg.sender].status = status;
+      userPremiumData[msg.sender].paid = 0;
+      userPremiumData[msg.sender].expiration = 0;
+    }
+
+    emit PremiumStatusChanged(msg.sender, status);
   }
 
   function mintToken(address to, uint256 amount) external onlyOwner {
@@ -751,8 +648,12 @@ contract MOVINEarnV2 is
     return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
   }
 
-  function getIsPremiumUser(address user) external view returns (bool) {
-    return userActivities[user].isPremium;
+  function getPremiumStatus() external view returns (bool, uint256, uint256) {
+    return (
+      userPremiumData[msg.sender].status,
+      userPremiumData[msg.sender].paid,
+      userPremiumData[msg.sender].expiration
+    );
   }
 
   function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
