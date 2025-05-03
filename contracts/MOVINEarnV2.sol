@@ -524,6 +524,10 @@ contract MOVINEarnV2 is
     referrals[referrer].push(msg.sender);
     userReferrals[referrer].referralCount++;
 
+    // Distribute 1 MVN token to both referrer and referee as a bonus
+    _distributeTokens(referrer, 1 * 10 ** 18, true);
+    _distributeTokens(msg.sender, 1 * 10 ** 18, true);
+
     emit ReferralRegistered(msg.sender, referrer);
   }
 

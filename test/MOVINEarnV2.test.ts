@@ -835,6 +835,10 @@ describe('MOVINEarnV2', function () {
 
   describe('Referral system', function () {
     it('Should allow users to register referrals', async function () {
+      // Get balances before registering referral
+      const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
+      const refereeBalanceBefore = await movinToken.balanceOf(user2.address);
+
       await expect(movinEarn.connect(user2).registerReferral(user1.address))
         .to.emit(movinEarn, 'ReferralRegistered')
         .withArgs(user2.address, user1.address);
@@ -852,6 +856,14 @@ describe('MOVINEarnV2', function () {
       expect(referrer1).to.equal('0x0000000000000000000000000000000000000000');
       expect(earnedBonus1).to.equal(0);
       expect(referralCount1).to.equal(1); // user1 has 1 referral (user2)
+
+      // Get balances after registering referral
+      const referrerBalanceAfter = await movinToken.balanceOf(user1.address);
+      const refereeBalanceAfter = await movinToken.balanceOf(user2.address);
+
+      // Verify both referrer and referee received 1 MVN token
+      expect(referrerBalanceAfter - referrerBalanceBefore).to.equal(ethers.parseEther('1'));
+      expect(refereeBalanceAfter - refereeBalanceBefore).to.equal(ethers.parseEther('1'));
     });
 
     it('Should prevent self-referral', async function () {
@@ -977,6 +989,23 @@ describe('MOVINEarnV2', function () {
       // Verify referral info was updated
       const [_, earnedBonus] = await movinEarn.getReferralInfo(user1.address);
       expect(earnedBonus).to.equal(referralBonus);
+    });
+
+    it('Should distribute 1 MVN token to both referrer and referee when registering a referral', async function () {
+      // Get balances before registering referral
+      const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
+      const refereeBalanceBefore = await movinToken.balanceOf(user2.address);
+
+      // Register referral
+      await movinEarn.connect(user2).registerReferral(user1.address);
+
+      // Get balances after registering referral
+      const referrerBalanceAfter = await movinToken.balanceOf(user1.address);
+      const refereeBalanceAfter = await movinToken.balanceOf(user2.address);
+
+      // Verify both referrer and referee received 1 MVN token
+      expect(referrerBalanceAfter - referrerBalanceBefore).to.equal(ethers.parseEther('1'));
+      expect(refereeBalanceAfter - refereeBalanceBefore).to.equal(ethers.parseEther('1'));
     });
   });
 

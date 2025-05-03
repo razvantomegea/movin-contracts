@@ -71,6 +71,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 - Users can refer multiple people
 - Each referee can only have one referrer
+- Both referrer and referee receive 1 MVN token when a referral is registered
 - Referrer receives 1% of referee's claimed activity rewards (`REFERRAL_BONUS_PERCENT = 100` basis points)
 - Referral bonuses are paid automatically when activity rewards are claimed
 - Self-referral is not allowed
