@@ -22,13 +22,15 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Supports multiple lock periods: 1, 3, 6, 12, and 24 months
 - Each lock period has a corresponding multiplier (1x, 3x, 6x, 12x, 24x)
 - Users can have multiple stakes with different lock periods
+- 24-month lock period is reserved for premium users only
 
 #### Staking Rewards
 
 - Rewards are calculated based on: stake amount × APR × time staked
 - APR is determined by the lock period multiplier
 - Rewards can be claimed individually or all at once
-- **Reward Expiration**: Staking rewards expire if not claimed within 1 day of the calculation period.
+- For unclaimed rewards that exceed 24 hours, only the most recent modulo 24 hours period is counted
+- Minimum reward threshold of 0.001 ether (1 finney) required for claiming
 - No burn fee on claiming staking rewards
 - 1% burn fee on unstaking (`UNSTAKE_BURN_FEES_PERCENT`)
 
@@ -56,9 +58,14 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 ### 4. Premium User System
 
 - Premium users can earn additional rewards through METs tracking
-- Premium status can only be set by contract owner
-- Premium status affects reward calculation and activity tracking
-- Enables staking for the 24-month lock period
+- Premium users can stake for the extended 24-month lock period
+- Premium status is self-service and can be activated by any user
+- Two subscription options:
+  - Monthly: 100 MVN tokens for 30 days of premium access
+  - Yearly: 1000 MVN tokens for 365 days of premium access
+- Premium status automatically expires after the subscription period ends
+- Premium status can be renewed by making another payment
+- Users can check their premium status, amount paid, and expiration time
 
 ### 5. Referral System
 
@@ -68,6 +75,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Referral bonuses are paid automatically when activity rewards are claimed
 - Self-referral is not allowed
 - Referral relationships cannot be changed once established
+- Users can retrieve a list of all their referrals
 
 ### 6. Reward Rate System
 
@@ -92,11 +100,10 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 - Contract owner can:
   - Pause/unpause the contract
-  - Set premium user status
-  - Migrate user data
   - Mint tokens
   - Update lock period multipliers
   - Recover ERC20 tokens (except MOVIN token)
+  - Verify reward rates consistency
 
 ## Technical Details
 
@@ -113,7 +120,10 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - HALVING_DECREASE_PERCENT: 1 (Represents 0.1% daily)
 - HALVING_RATE_NUMERATOR: 999
 - HALVING_RATE_DENOMINATOR: 1000
-- REWARD_EXPIRATION_PERIOD: 1 day
+- PREMIUM_EXPIRATION_TIME_MONTHLY: 30 days
+- PREMIUM_EXPIRATION_TIME_YEARLY: 365 days
+- PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT: 100 MVN
+- PREMIUM_EXPIRATION_TIME_YEARLY_AMOUNT: 1000 MVN
 
 ### Events
 
@@ -124,7 +134,6 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - RewardsClaimed: Emitted when activity rewards are claimed
 - PremiumStatusChanged: Emitted when premium status changes
 - RewardsRateDecreased: Emitted when reward rates decrease
-- RewardsAccumulated: Emitted when rewards are accumulated
 - Deposit: Emitted when tokens are deposited
 - ReferralRegistered: Emitted when a referral is registered
 - ReferralBonusPaid: Emitted when referral bonus is paid
@@ -134,6 +143,22 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - BulkMigrationCompleted: Emitted when bulk migration is completed
 - TokensLocked (from MovinToken): Emitted when tokens are locked
 - TokensUnlocked (from MovinToken): Emitted when tokens are unlocked
+
+### Errors
+
+- ZeroAmountNotAllowed: When trying to stake or deposit zero tokens
+- InvalidLockPeriod: When an unsupported lock period is specified
+- InsufficientBalance: When token balance is too low for an operation
+- InsufficientAllowance: When token allowance is too low
+- InvalidStakeIndex: When accessing a non-existent stake
+- LockPeriodActive: When trying to unstake before lock period expires
+- NoRewardsAvailable: When trying to claim non-existent or too small rewards
+- InvalidActivityInput: When activity input exceeds rate limits or validation fails
+- UnauthorizedAccess: When a user attempts an action they're not authorized for
+- ContractPaused: When attempting an action while the contract is paused
+- AlreadyReferred: When a user attempts to register a referral more than once
+- InvalidReferrer: When attempting to set an invalid referrer
+- InvalidPremiumAmount: When attempting to set premium status with an incorrect amount
 
 ## Security Features
 
@@ -165,5 +190,8 @@ The contract has comprehensive test coverage including:
 - Activity history tests
 - Referral rewards tests
 - Token functionality tests
+- Premium status management tests
+- Premium features access control tests
+- Premium expiration tests
 
 All tests are passing, indicating robust implementation of the contract's features.

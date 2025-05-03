@@ -122,8 +122,8 @@ contract MOVINEarnV2 is
   uint256 public constant HALVING_RATE_DENOMINATOR = 1000; // For 0.1% daily decrease
   uint256 public constant PREMIUM_EXPIRATION_TIME_MONTHLY = 30 days;
   uint256 public constant PREMIUM_EXPIRATION_TIME_YEARLY = 365 days;
-  uint256 public constant PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT = 100; // 100 MVN per month
-  uint256 public constant PREMIUM_EXPIRATION_TIME_YEARLY_AMOUNT = 1000; // 1000 MVN per year
+  uint256 public constant PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT = 100 * 10 ** 18; // 100 MVN per month
+  uint256 public constant PREMIUM_EXPIRATION_TIME_YEARLY_AMOUNT = 1000 * 10 ** 18; // 1000 MVN per year
 
   address public migrator;
 
@@ -649,6 +649,13 @@ contract MOVINEarnV2 is
   }
 
   function getPremiumStatus() external view returns (bool, uint256, uint256) {
+    bool isExpired = userPremiumData[msg.sender].expiration > 0 &&
+      userPremiumData[msg.sender].expiration < block.timestamp;
+
+    if (isExpired) {
+      return (false, userPremiumData[msg.sender].paid, userPremiumData[msg.sender].expiration);
+    }
+
     return (
       userPremiumData[msg.sender].status,
       userPremiumData[msg.sender].paid,

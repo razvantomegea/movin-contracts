@@ -88,7 +88,7 @@ describe('MOVINEarnV2', function () {
       const stakeAmount = ethers.parseEther('100');
 
       // Set user1 as premium to allow staking for 24 months
-      await movinEarn.connect(user1).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
 
       // Test each valid lock period
       const lockPeriods = [1, 3, 6, 12, 24];
@@ -129,7 +129,7 @@ describe('MOVINEarnV2', function () {
       const stakeAmount = ethers.parseEther('100');
 
       // Set user1 as premium and user2 as non-premium
-      await movinEarn.connect(user1).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
       await movinEarn.connect(user2).setPremiumStatus(false, 0);
 
       // Approve tokens for both users
@@ -495,7 +495,7 @@ describe('MOVINEarnV2', function () {
   describe('Activity recording and rewards', function () {
     beforeEach(async function () {
       // Set user1 as premium
-      await movinEarn.connect(user1).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
     });
 
     it('Should correctly record steps activity and distribute rewards', async function () {
@@ -744,7 +744,7 @@ describe('MOVINEarnV2', function () {
       const refereeInitialBalance = await movinToken.balanceOf(user2.address);
 
       // Set user2 as premium to get both steps and METs rewards
-      await movinEarn.connect(user2).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
 
       // Record activity for referee (user2)
       await movinEarn.connect(user2).recordActivity(STEPS_THRESHOLD, METS_THRESHOLD);
@@ -907,7 +907,7 @@ describe('MOVINEarnV2', function () {
       expect(referrer4).to.equal(user1.address);
 
       // Verify rewards are properly distributed to referrer
-      await movinEarn.connect(user2).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
 
       // Get balances before activity
       const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
@@ -944,7 +944,7 @@ describe('MOVINEarnV2', function () {
       await movinEarn.connect(user2).registerReferral(user1.address);
 
       // Set user2 as premium to get METs rewards
-      await movinEarn.connect(user2).setPremiumStatus(true, 1000);
+      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
 
       // Get balances before activity
       const user2BalanceBefore = await movinToken.balanceOf(user2.address);
@@ -977,6 +977,156 @@ describe('MOVINEarnV2', function () {
       // Verify referral info was updated
       const [_, earnedBonus] = await movinEarn.getReferralInfo(user1.address);
       expect(earnedBonus).to.equal(referralBonus);
+    });
+  });
+
+  describe('Premium status functionality', function () {
+    it('Should set and get premium status with monthly payment', async function () {
+      // Get initial premium status
+      const [initialStatus, initialPaid, initialExpiration] = await movinEarn
+        .connect(user1)
+        .getPremiumStatus();
+      expect(initialStatus).to.equal(false);
+      expect(initialPaid).to.equal(0);
+      expect(initialExpiration).to.equal(0);
+
+      // Set premium status with monthly payment
+      const monthlyAmount = ethers.parseEther('100'); // 100 MVN tokens
+      await movinEarn.connect(user1).setPremiumStatus(true, monthlyAmount);
+
+      // Get updated premium status
+      const [status, paid, expiration] = await movinEarn.connect(user1).getPremiumStatus();
+
+      // Verify premium status
+      expect(status).to.equal(true);
+      expect(paid).to.equal(monthlyAmount);
+
+      // Get current timestamp and verify expiration is roughly 30 days in the future
+      const currentTimestamp = await time.latest();
+      const expectedExpiration = currentTimestamp + 30 * 24 * 60 * 60; // 30 days in seconds
+      expect(expiration).to.be.closeTo(BigInt(expectedExpiration), BigInt(5)); // Allow small timestamp difference
+    });
+
+    it('Should set and get premium status with yearly payment', async function () {
+      // Set premium status with yearly payment
+      const yearlyAmount = ethers.parseEther('1000'); // 1000 MVN tokens
+      await movinEarn.connect(user1).setPremiumStatus(true, yearlyAmount);
+
+      // Get updated premium status
+      const [status, paid, expiration] = await movinEarn.connect(user1).getPremiumStatus();
+
+      // Verify premium status
+      expect(status).to.equal(true);
+      expect(paid).to.equal(yearlyAmount);
+
+      // Get current timestamp and verify expiration is roughly 365 days in the future
+      const currentTimestamp = await time.latest();
+      const expectedExpiration = currentTimestamp + 365 * 24 * 60 * 60; // 365 days in seconds
+      expect(expiration).to.be.closeTo(BigInt(expectedExpiration), BigInt(5)); // Allow small timestamp difference
+    });
+
+    it('Should fail when setting premium status with invalid amount', async function () {
+      // Try to set premium status with invalid amount
+      const invalidAmount = ethers.parseEther('500'); // Neither monthly nor yearly amount
+      await expect(
+        movinEarn.connect(user1).setPremiumStatus(true, invalidAmount)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidPremiumAmount');
+    });
+
+    it('Should allow resetting premium status to false', async function () {
+      // First set premium status
+      const monthlyAmount = ethers.parseEther('100');
+      await movinEarn.connect(user1).setPremiumStatus(true, monthlyAmount);
+
+      // Verify it was set
+      const [initialStatus] = await movinEarn.connect(user1).getPremiumStatus();
+      expect(initialStatus).to.equal(true);
+
+      // Reset premium status to false
+      await movinEarn.connect(user1).setPremiumStatus(false, 0);
+
+      // Verify it was reset
+      const [status, paid, expiration] = await movinEarn.connect(user1).getPremiumStatus();
+      expect(status).to.equal(false);
+      expect(paid).to.equal(0);
+      expect(expiration).to.equal(0);
+    });
+
+    it('Should return expired status after the premium period ends', async function () {
+      // Set premium status with monthly payment
+      const monthlyAmount = ethers.parseEther('100');
+      await movinEarn.connect(user1).setPremiumStatus(true, monthlyAmount);
+
+      // Verify it was set
+      const [initialStatus] = await movinEarn.connect(user1).getPremiumStatus();
+      expect(initialStatus).to.equal(true);
+
+      // Advance time beyond expiration (31 days)
+      await time.increase(31 * 24 * 60 * 60);
+
+      // Check premium status after expiration
+      const [statusAfterExpiration, paid, expiration] = await movinEarn
+        .connect(user1)
+        .getPremiumStatus();
+      expect(statusAfterExpiration).to.equal(false); // Should be false due to expiration
+      expect(paid).to.equal(monthlyAmount); // Paid amount should still be recorded
+      expect(expiration).to.be.lt(await time.latest()); // Expiration should be in the past
+    });
+
+    it('Should restrict METs activity rewards for non-premium users', async function () {
+      // Ensure user2 is not premium
+      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+
+      // Get initial balance
+      const initialBalance = await movinToken.balanceOf(user2.address);
+
+      // Record METs activity for non-premium user
+      await movinEarn.connect(user2).recordActivity(0, METS_THRESHOLD);
+
+      // Get balance after activity
+      const balanceAfter = await movinToken.balanceOf(user2.address);
+
+      // Verify no rewards were given for METs activity
+      expect(balanceAfter).to.equal(initialBalance);
+
+      // Now set user2 as premium
+      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('100'));
+
+      // Record METs activity again
+      await time.increase(60); // Wait 1 minute to avoid rate limiting
+      await movinEarn.connect(user2).recordActivity(0, METS_THRESHOLD);
+
+      // Get balance after activity as premium user
+      const balanceAfterPremium = await movinToken.balanceOf(user2.address);
+
+      // Verify rewards were given now that the user is premium
+      expect(balanceAfterPremium).to.be.gt(balanceAfter);
+    });
+
+    it('Should prevent non-premium users from staking for 24 months', async function () {
+      const stakeAmount = ethers.parseEther('100');
+
+      // Ensure user2 is not premium
+      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+
+      // Approve tokens for staking
+      await movinToken.connect(user2).approve(await movinEarn.getAddress(), stakeAmount);
+
+      // Try to stake for 24 months as non-premium user
+      await expect(
+        movinEarn.connect(user2).stakeTokens(stakeAmount, 24)
+      ).to.be.revertedWithCustomError(movinEarn, 'UnauthorizedAccess');
+
+      // Set premium status
+      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('100'));
+
+      // Now should be able to stake for 24 months
+      await movinEarn.connect(user2).stakeTokens(stakeAmount, 24);
+
+      // Verify stake was created with 24 month lock period
+      const stakeIndex = (await movinEarn.connect(user2).getUserStakeCount()) - 1n;
+      const userStake = await movinEarn.connect(user2).getUserStake(stakeIndex);
+      expect(userStake.lockDuration).to.equal(24 * 30 * 24 * 60 * 60); // 24 months in seconds
     });
   });
 

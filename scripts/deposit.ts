@@ -66,6 +66,12 @@ async function main() {
   const stakeCount = await movinEarnV2.connect(wallet).getUserStakeCount();
   console.log(`Stake count: ${stakeCount}`);
 
+  const premiumExpirationTimeMonthlyAmount =
+    await movinEarnV2.PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT();
+  console.log(`Premium expiration time monthly amount: ${premiumExpirationTimeMonthlyAmount}`);
+
+  await movinEarnV2.connect(wallet).setPremiumStatus(false, 0);
+
   const premiumStatus = await movinEarnV2.connect(wallet).getPremiumStatus();
   console.log(`Premium status: ${premiumStatus}`);
 }
