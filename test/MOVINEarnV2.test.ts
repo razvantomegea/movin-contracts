@@ -249,7 +249,7 @@ describe('MOVINEarnV2', function () {
       }
 
       // No burn fee applied to rewards
-      const expectedUserReward = totalExpectedReward;
+      const expectedReward = totalExpectedReward;
 
       // Get user balance before claiming
       const balanceBefore = await movinToken.balanceOf(user1.address);
@@ -281,9 +281,9 @@ describe('MOVINEarnV2', function () {
 
       // Use tolerance comparison instead of exact equality
       const rewardDifference =
-        expectedUserReward > actualReward
-          ? expectedUserReward - actualReward
-          : actualReward - expectedUserReward;
+        expectedReward > actualReward
+          ? expectedReward - actualReward
+          : actualReward - expectedReward;
 
       expect(Number(ethers.formatEther(rewardDifference))).to.be.lessThan(0.01);
     });
@@ -323,6 +323,134 @@ describe('MOVINEarnV2', function () {
       const actualPayout = balanceAfter - balanceBefore;
 
       expect(actualPayout).to.equal(expectedPayout);
+    });
+
+    it('Should allow restaking after lock period without burn fee', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const initialLockPeriod = 1; // 1 month
+      const newLockPeriod = 3; // 3 months for restaking
+
+      // Stake tokens
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, initialLockPeriod);
+
+      // Verify initial stake
+      const initialStakeCount = await movinEarn.connect(user1).getUserStakeCount();
+      expect(initialStakeCount).to.equal(1);
+      const initialStake = await movinEarn.connect(user1).getUserStake(0);
+      expect(initialStake.amount).to.equal(stakeAmount);
+      expect(initialStake.lockDuration).to.equal(initialLockPeriod * 30 * 24 * 60 * 60);
+
+      // Advance time beyond the lock period
+      await time.increase(32 * 24 * 60 * 60); // 32 days
+
+      // Restake
+      await movinEarn.connect(user1).restake(0, newLockPeriod);
+
+      // Verify stake count remains the same (one removed, one added)
+      const stakeCountAfterRestaking = await movinEarn.connect(user1).getUserStakeCount();
+      expect(stakeCountAfterRestaking).to.equal(1);
+
+      // Verify new stake has correct parameters
+      const newStake = await movinEarn.connect(user1).getUserStake(0);
+      expect(newStake.amount).to.equal(stakeAmount); // Full amount preserved (no burn fee)
+      expect(newStake.lockDuration).to.equal(newLockPeriod * 30 * 24 * 60 * 60); // New lock period
+    });
+
+    it('Should reject restaking if lock period still active', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const lockPeriod = 1; // 1 month
+
+      // Stake tokens
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+
+      // Advance time but not enough to reach the end of lock period
+      await time.increase(15 * 24 * 60 * 60); // 15 days
+
+      // Attempt to restake should fail
+      await expect(movinEarn.connect(user1).restake(0, 3)).to.be.revertedWithCustomError(
+        movinEarn,
+        'LockPeriodActive'
+      );
+    });
+
+    it('Should reject restaking with invalid lock period', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const lockPeriod = 1; // 1 month
+
+      // Stake tokens
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+
+      // Advance time beyond the lock period
+      await time.increase(32 * 24 * 60 * 60); // 32 days
+
+      // Attempt to restake with invalid lock period should fail
+      await expect(
+        movinEarn.connect(user1).restake(0, 2) // 2 months is not a valid lock period
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidLockPeriod');
+    });
+
+    it('Should only allow premium users to restake for 24 months', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const lockPeriod = 1; // 1 month
+
+      // Create stakes for both users
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await movinToken.connect(user2).approve(await movinEarn.getAddress(), stakeAmount);
+      await movinEarn.connect(user2).stakeTokens(stakeAmount, lockPeriod);
+
+      // Advance time beyond the lock period
+      await time.increase(32 * 24 * 60 * 60); // 32 days
+
+      // Set user1 as premium and user2 as non-premium
+      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
+      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+
+      // Premium user should be able to restake for 24 months
+      await movinEarn.connect(user1).restake(0, 24);
+
+      // Verify the restake worked
+      const user1Stake = await movinEarn.connect(user1).getUserStake(0);
+      expect(user1Stake.lockDuration).to.equal(24 * 30 * 24 * 60 * 60);
+
+      // Non-premium user should not be able to restake for 24 months
+      await expect(movinEarn.connect(user2).restake(0, 24)).to.be.revertedWithCustomError(
+        movinEarn,
+        'UnauthorizedAccess'
+      );
+
+      // Non-premium user should still be able to restake for other periods
+      await movinEarn.connect(user2).restake(0, 12);
+
+      // Verify the restake worked
+      const user2Stake = await movinEarn.connect(user2).getUserStake(0);
+      expect(user2Stake.lockDuration).to.equal(12 * 30 * 24 * 60 * 60);
+    });
+
+    it('Should calculate staking rewards correctly', async function () {
+      const stakeAmount = ethers.parseEther('1000');
+      const lockPeriod = 12; // 12 months, which has a multiplier of 12
+
+      // Stake tokens
+      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+
+      // Advance time by 12 hours (less than 1 day expiration)
+      await time.increase(12 * 60 * 60);
+
+      // Calculate expected reward
+      // Formula: (amount * apr * effectiveDuration) / (100 * 365 days)
+      const apr = 12; // Multiplier for 12 months
+      const durationSeconds = 12 * 60 * 60; // 12 hours
+      const expectedReward =
+        (stakeAmount * BigInt(apr) * BigInt(durationSeconds)) / (BigInt(100) * BigInt(ONE_YEAR));
+
+      // Get calculated reward from contract
+      const reward = await movinEarn.connect(user1).calculateStakingReward(0);
+
+      // Allow for small rounding difference due to timestamp variations
+      const difference =
+        expectedReward > reward ? expectedReward - reward : reward - expectedReward;
+
+      expect(Number(ethers.formatEther(difference))).to.be.lessThan(0.01);
     });
 
     it('Should calculate rewards for modulo 24 hours when more than 24 hours have passed', async function () {

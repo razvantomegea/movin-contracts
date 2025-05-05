@@ -34,6 +34,15 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - No burn fee on claiming staking rewards
 - 1% burn fee on unstaking (`UNSTAKE_BURN_FEES_PERCENT`)
 
+#### Restaking
+
+- Users can restake their tokens once the lock period has expired
+- Restaking avoids the 1% burn fee that would occur with unstaking
+- Users can choose a new lock period (1, 3, 6, 12, or 24 months) for the restaked tokens
+- 24-month restaking option is reserved for premium users only
+- Restaking creates a new stake with the original amount and resets the lock period
+- Original stake is removed and a new stake is created with the full amount preserved
+
 ### 3. Activity Tracking System
 
 #### Steps Tracking
@@ -132,6 +141,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Staked: Emitted when tokens are staked
 - StakingRewardsClaimed: Emitted when staking rewards are claimed
 - Unstaked: Emitted when tokens are unstaked
+- Restaked: Emitted when tokens are restaked after lock period expiry
 - ActivityRecorded: Emitted when activity is recorded
 - RewardsClaimed: Emitted when activity rewards are claimed
 - PremiumStatusChanged: Emitted when premium status changes

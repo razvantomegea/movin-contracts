@@ -97,6 +97,14 @@ contract MOVINEarnV2 is
 
   event Minted(address indexed user, uint256 amount);
 
+  event Restaked(
+    address indexed user,
+    uint256 amount,
+    uint256 lockPeriod,
+    uint256 newStakeIndex,
+    uint256 oldStakeIndex
+  );
+
   mapping(uint256 => uint256) public lockPeriodMultipliers;
   mapping(address => Stake[]) public userStakes;
   mapping(address => UserActivity) public userActivities;
@@ -280,6 +288,44 @@ contract MOVINEarnV2 is
     _removeStake(msg.sender, stakeIndex);
 
     emit Unstaked(msg.sender, stake.amount, stakeIndex);
+  }
+
+  // New function for restaking without burning fees
+  function restake(
+    uint256 stakeIndex,
+    uint256 lockMonths
+  ) external nonReentrant whenNotPausedWithRevert {
+    uint256 stakeCount = userStakes[msg.sender].length;
+
+    if (stakeIndex >= stakeCount) revert InvalidStakeIndex(stakeIndex, stakeCount - 1);
+    if (lockPeriodMultipliers[lockMonths] == 0) revert InvalidLockPeriod(lockMonths);
+    if (lockMonths == 24 && !userPremiumData[msg.sender].status) revert UnauthorizedAccess();
+
+    Stake storage stake = userStakes[msg.sender][stakeIndex];
+    uint256 unlockTime = stake.startTime + stake.lockDuration;
+
+    // Check if the lock period is completed
+    if (block.timestamp < unlockTime) {
+      revert LockPeriodActive(unlockTime);
+    }
+
+    uint256 amount = stake.amount;
+    uint256 lockPeriod = lockMonths * 30 days;
+
+    // Remove old stake first to prevent any reentrancy issues
+    _removeStake(msg.sender, stakeIndex);
+
+    // Create a new stake with the same amount
+    userStakes[msg.sender].push(
+      Stake({
+        amount: amount,
+        startTime: block.timestamp,
+        lockDuration: lockPeriod,
+        lastClaimed: block.timestamp
+      })
+    );
+
+    emit Restaked(msg.sender, amount, lockPeriod, userStakes[msg.sender].length - 1, stakeIndex);
   }
 
   function getUserStakes(address user) external view returns (Stake[] memory) {
