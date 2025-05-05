@@ -66,6 +66,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Premium status automatically expires after the subscription period ends
 - Premium status can be renewed by making another payment
 - Users can check their premium status, amount paid, and expiration time
+- The tokens paid for the subscription are burnt
 
 ### 5. Referral System
 

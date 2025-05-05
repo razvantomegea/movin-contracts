@@ -620,6 +620,7 @@ contract MOVINEarnV2 is
       userPremiumData[msg.sender].status = status;
       userPremiumData[msg.sender].paid = amount;
       userPremiumData[msg.sender].expiration = expirationTime;
+      movinToken.burn(amount);
     } else {
       userPremiumData[msg.sender].status = status;
       userPremiumData[msg.sender].paid = 0;
