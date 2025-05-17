@@ -446,16 +446,15 @@ async function testClaimAllStakingRewards(
     console.log('\nCalculating expected rewards for each stake:');
     for (let i = 0; i < updatedStakeCount; i++) {
       const stake = await movinEarnV2.connect(user).getUserStake(i);
-      const stakeReward = await movinEarnV2.connect(user).calculateStakingReward(i);
 
       // Fix month calculation for logging
       const lockMonths = Number(stake.lockDuration) / (30 * 24 * 60 * 60);
       console.log(
         `Stake ${i} (${ethers.formatEther(stake.amount)} MOVIN for ${lockMonths} months):`
       );
-      console.log(`  Expected reward: ${ethers.formatEther(stakeReward)} MOVIN`);
+      console.log(`  Expected reward: ${ethers.formatEther(stake.reward)} MOVIN`);
 
-      totalExpectedReward += stakeReward;
+      totalExpectedReward += stake.reward;
     }
 
     console.log('\nTotal expected reward:', ethers.formatEther(totalExpectedReward), 'MOVIN');
@@ -765,12 +764,14 @@ async function testPremiumUserFeatures(
   const premiumStakeIndex = user1StakeCount - 1n;
   const regularStakeIndex = user2StakeCount - 1n;
 
-  const premiumStakingReward = await movinEarnV2
-    .connect(user1)
-    .calculateStakingReward(premiumStakeIndex);
-  const regularStakingReward = await movinEarnV2
-    .connect(user2)
-    .calculateStakingReward(regularStakeIndex);
+  const premiumStakingReward = await movinEarnV2.calculateStakingReward(
+    user1.address,
+    premiumStakeIndex
+  );
+  const regularStakingReward = await movinEarnV2.calculateStakingReward(
+    user2.address,
+    regularStakeIndex
+  );
 
   // Note: Premium doesn't grant bonus staking rewards in this version either
   console.log('Premium user staking rewards:', ethers.formatEther(premiumStakingReward), 'MOVIN');

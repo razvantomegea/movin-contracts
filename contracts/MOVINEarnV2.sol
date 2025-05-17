@@ -224,7 +224,7 @@ contract MOVINEarnV2 is
     Stake storage stake = userStakes[msg.sender][stakeIndex]; // Use storage reference
 
     // Calculate reward (will be 0 if expired due to logic in calculateStakingReward)
-    uint256 reward = calculateStakingReward(stakeIndex);
+    uint256 reward = calculateStakingReward(msg.sender, stakeIndex);
 
     // Update lastClaimed regardless of reward amount to reset the timer
     stake.lastClaimed = block.timestamp;
@@ -252,7 +252,7 @@ contract MOVINEarnV2 is
 
     for (uint256 i; i < stakeCount; ++i) {
       // Calculate reward (will be 0 if expired due to logic in calculateStakingReward)
-      uint256 reward = calculateStakingReward(i);
+      uint256 reward = calculateStakingReward(msg.sender, i);
       if (reward > 0) {
         totalReward += reward;
         hasRewards = true;
@@ -339,12 +339,12 @@ contract MOVINEarnV2 is
   }
 
   function getUserStakes(address user) external view returns (StakeView[] memory) {
-    Stake[] storage stakes = userStakes[user];
+    Stake[] memory stakes = userStakes[user];
     StakeView[] memory stakeViews = new StakeView[](stakes.length);
 
     for (uint256 i = 0; i < stakes.length; i++) {
-      Stake storage stake = stakes[i];
-      uint256 reward = _calculateStakingRewardForAddress(user, i);
+      Stake memory stake = stakes[i];
+      uint256 reward = calculateStakingReward(user, i);
 
       stakeViews[i] = StakeView({
         amount: stake.amount,
@@ -363,8 +363,8 @@ contract MOVINEarnV2 is
       revert InvalidStakeIndex(index, userStakes[msg.sender].length - 1);
     }
 
-    Stake storage stake = userStakes[msg.sender][index];
-    uint256 reward = calculateStakingReward(index);
+    Stake memory stake = userStakes[msg.sender][index];
+    uint256 reward = calculateStakingReward(msg.sender, index);
 
     return
       StakeView({
@@ -421,8 +421,8 @@ contract MOVINEarnV2 is
     return (stepsReward, metsReward, todaySteps, todayMets);
   }
 
-  function calculateStakingReward(uint256 stakeIndex) public view returns (uint256) {
-    Stake storage stake = userStakes[msg.sender][stakeIndex];
+  function calculateStakingReward(address user, uint256 stakeIndex) public view returns (uint256) {
+    Stake storage stake = userStakes[user][stakeIndex];
 
     uint256 timeSinceLastClaimed = block.timestamp - stake.lastClaimed;
     uint256 effectiveDuration;
@@ -790,35 +790,5 @@ contract MOVINEarnV2 is
     } else {
       revert InsufficientBalance(contractBalance, amount);
     }
-  }
-
-  // Helper function to calculate rewards for a specific address and stake index
-  function _calculateStakingRewardForAddress(
-    address user,
-    uint256 stakeIndex
-  ) internal view returns (uint256) {
-    Stake storage stake = userStakes[user][stakeIndex];
-
-    uint256 timeSinceLastClaimed = block.timestamp - stake.lastClaimed;
-    uint256 effectiveDuration;
-
-    // Check if more than 1 day has passed since last claim
-    if (timeSinceLastClaimed > 1 days) {
-      // Calculate the remaining hours after taking modulo 24 hours
-      effectiveDuration = timeSinceLastClaimed % 1 days;
-    } else {
-      // Less than 24 hours passed, use the entire duration
-      effectiveDuration = timeSinceLastClaimed;
-    }
-
-    uint256 lockMonths = stake.lockDuration / 30 days;
-    uint256 apr = lockPeriodMultipliers[lockMonths];
-
-    // Calculate reward: (amount * apr * effectiveDuration) / (100 * 365 days)
-    // The division by 100 converts apr from percentage to decimal
-    // The division by 365 days is because APR is annual
-    uint256 reward = (stake.amount * apr * effectiveDuration) / (100 * 365 days);
-
-    return reward;
   }
 }
