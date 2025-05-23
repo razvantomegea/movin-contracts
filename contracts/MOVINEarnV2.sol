@@ -699,14 +699,15 @@ contract MOVINEarnV2 is
         revert InvalidPremiumAmount();
       }
 
-      userPremiumData[msg.sender].status = status;
-      userPremiumData[msg.sender].paid = amount;
-      userPremiumData[msg.sender].expiration = expirationTime;
-      movinToken.burn(amount);
+      userPremiumData[msg.sender] = PremiumUserData({
+        status: status,
+        paid: amount,
+        expiration: expirationTime
+      });
+
+      movinToken.transferFrom(msg.sender, address(this), amount);
     } else {
-      userPremiumData[msg.sender].status = status;
-      userPremiumData[msg.sender].paid = 0;
-      userPremiumData[msg.sender].expiration = 0;
+      userPremiumData[msg.sender] = PremiumUserData({ status: status, paid: 0, expiration: 0 });
     }
 
     emit PremiumStatusChanged(msg.sender, status);
@@ -735,19 +736,21 @@ contract MOVINEarnV2 is
     return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
   }
 
-  function getPremiumStatus() external view returns (bool, uint256, uint256) {
-    bool isExpired = userPremiumData[msg.sender].expiration > 0 &&
-      userPremiumData[msg.sender].expiration < block.timestamp;
+  function getPremiumStatus(address user) external view returns (PremiumUserData memory) {
+    PremiumUserData memory premiumData = userPremiumData[user];
+
+    bool isExpired = premiumData.expiration > 0 && premiumData.expiration < block.timestamp;
 
     if (isExpired) {
-      return (false, userPremiumData[msg.sender].paid, userPremiumData[msg.sender].expiration);
+      return
+        PremiumUserData({
+          status: false,
+          paid: premiumData.paid,
+          expiration: premiumData.expiration
+        });
     }
 
-    return (
-      userPremiumData[msg.sender].status,
-      userPremiumData[msg.sender].paid,
-      userPremiumData[msg.sender].expiration
-    );
+    return premiumData;
   }
 
   function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}

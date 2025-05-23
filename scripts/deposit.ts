@@ -70,9 +70,9 @@ async function main() {
     await movinEarnV2.PREMIUM_EXPIRATION_TIME_MONTHLY_AMOUNT();
   console.log(`Premium expiration time monthly amount: ${premiumExpirationTimeMonthlyAmount}`);
 
-  await movinEarnV2.connect(wallet).setPremiumStatus(false, 0);
+  // await movinEarnV2.connect(wallet).setPremiumStatus(false, 0);
 
-  const premiumStatus = await movinEarnV2.connect(wallet).getPremiumStatus();
+  const premiumStatus = await movinEarnV2.getPremiumStatus(wallet.address);
   console.log(`Premium status: ${premiumStatus}`);
 }
 
