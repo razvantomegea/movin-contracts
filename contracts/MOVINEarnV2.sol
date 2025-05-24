@@ -381,10 +381,12 @@ contract MOVINEarnV2 is
   }
 
   function calculateActivityRewards(
+    address user,
     uint256 newSteps,
     uint256 newMets
   ) public view returns (uint256, uint256, uint256, uint256) {
-    UserActivity storage activity = userActivities[msg.sender];
+    UserActivity memory activity = userActivities[user];
+    PremiumUserData memory premiumData = userPremiumData[user];
     uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
     uint256 activityDay = ((activity.lastUpdated / 86400) % 365) + 1;
     uint256 dailySteps = activity.dailySteps;
@@ -405,7 +407,7 @@ contract MOVINEarnV2 is
       stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
     }
 
-    if (!userPremiumData[msg.sender].status) {
+    if (!premiumData.status) {
       return (stepsReward, 0, todaySteps, 0);
     }
 
@@ -447,7 +449,11 @@ contract MOVINEarnV2 is
     return reward;
   }
 
-  function recordActivity(uint256 newSteps, uint256 newMets) external whenNotPausedWithRevert {
+  function recordActivity(
+    address user,
+    uint256 newSteps,
+    uint256 newMets
+  ) external whenNotPausedWithRevert {
     // Skip validation completely if both inputs are zero
     // This allows referral registration to work properly
     if (newSteps <= 0 && newMets <= 0) {
@@ -459,7 +465,7 @@ contract MOVINEarnV2 is
     // % 365 gives us day of year (0-364)
     // + 1 gives us day of year (1-365)
     uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
-    UserActivity storage activity = userActivities[msg.sender];
+    UserActivity storage activity = userActivities[user];
     uint256 activityDay = ((activity.lastUpdated / 86400) % 365) + 1;
 
     // Check if activity doesn't exist or timestamp doesn't match current day
@@ -505,33 +511,26 @@ contract MOVINEarnV2 is
       uint256 metsReward,
       uint256 todaySteps,
       uint256 todayMets
-    ) = calculateActivityRewards(newSteps, newMets);
+    ) = calculateActivityRewards(user, newSteps, newMets);
 
     activity.dailySteps = todaySteps;
     activity.dailyMets = todayMets;
 
     // Update the total steps and METs counters for the user
-    userSteps[msg.sender] += newSteps;
-    userMets[msg.sender] += newMets;
+    userSteps[user] += newSteps;
+    userMets[user] += newMets;
 
-    emit ActivityRecorded(
-      msg.sender,
-      todaySteps,
-      todayMets,
-      todaySteps,
-      todayMets,
-      block.timestamp
-    );
+    emit ActivityRecorded(user, todaySteps, todayMets, todaySteps, todayMets, block.timestamp);
 
     uint256 totalReward = stepsReward + metsReward;
 
     // Send full reward to user
-    _distributeTokens(msg.sender, totalReward, true);
+    _distributeTokens(user, totalReward, true);
 
     activity.lastUpdated = block.timestamp;
 
     // Calculate and send referral bonus to referrer if exists
-    address referrer = userReferrals[msg.sender].referrer;
+    address referrer = userReferrals[user].referrer;
 
     if (referrer != address(0)) {
       // Calculate referral bonus using basis points (100 = 1%)
@@ -545,11 +544,11 @@ contract MOVINEarnV2 is
         userReferrals[referrer].earnedBonus += referralBonus;
 
         // Emit referral bonus event
-        emit ReferralBonusPaid(referrer, msg.sender, referralBonus);
+        emit ReferralBonusPaid(referrer, user, referralBonus);
       }
     }
 
-    emit RewardsClaimed(msg.sender, stepsReward, metsReward, totalReward);
+    emit RewardsClaimed(user, stepsReward, metsReward, totalReward);
   }
 
   function getTodayUserActivity() external view returns (UserActivity memory) {

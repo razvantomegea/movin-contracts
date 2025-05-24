@@ -74,6 +74,11 @@ async function main() {
 
   const premiumStatus = await movinEarnV2.getPremiumStatus(wallet.address);
   console.log(`Premium status: ${premiumStatus}`);
+
+  const rewards = await movinEarnV2
+    .connect(wallet)
+    .calculateActivityRewards(wallet.address, 4000, 21);
+  console.log(`Rewards: ${rewards}`);
 }
 
 main().catch(error => {
