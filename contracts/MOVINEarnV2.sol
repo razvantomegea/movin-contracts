@@ -551,9 +551,9 @@ contract MOVINEarnV2 is
     emit RewardsClaimed(user, stepsReward, metsReward, totalReward);
   }
 
-  function getTodayUserActivity() external view returns (UserActivity memory) {
+  function getTodayUserActivity(address user) external view returns (UserActivity memory) {
     uint256 currentDayOfYear = ((block.timestamp / 86400) % 365) + 1;
-    UserActivity storage activity = userActivities[msg.sender];
+    UserActivity storage activity = userActivities[user];
     uint256 activityDay = ((activity.lastUpdated / 86400) % 365) + 1;
 
     if (activityDay != currentDayOfYear) {

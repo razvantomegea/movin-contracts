@@ -659,7 +659,7 @@ async function testActivityRewardsCalculation(movinEarnV2: any, user1: any, movi
       console.log(`✅ Recorded activity ${i + 1}: ${stepsPerActivity} steps`);
 
       // Get current daily steps
-      const [dailySteps] = await movinEarnV2.connect(user1).getTodayUserActivity();
+      const [dailySteps] = await movinEarnV2.getTodayUserActivity(user1.address);
       console.log(`Current daily steps: ${dailySteps}`);
     }
 

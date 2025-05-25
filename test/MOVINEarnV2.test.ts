@@ -633,7 +633,7 @@ describe('MOVINEarnV2', function () {
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
 
       // Verify activity was recorded
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
       expect(activity.dailyMets).to.equal(0);
     });
@@ -653,7 +653,7 @@ describe('MOVINEarnV2', function () {
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
 
       // Verify activity was recorded
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(0);
       expect(activity.dailyMets).to.equal(METS_THRESHOLD);
     });
@@ -675,7 +675,7 @@ describe('MOVINEarnV2', function () {
       expect(balanceAfter).to.equal(initialBalance);
 
       // Verify activity was recorded but no rewards
-      const activity = await movinEarn.connect(user2).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user2.address);
       expect(activity.dailySteps).to.equal(0);
       expect(activity.dailyMets).to.equal(0);
     });
@@ -712,7 +712,7 @@ describe('MOVINEarnV2', function () {
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
 
       // Verify activity was recorded at threshold values
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(aboveThresholdSteps);
       expect(activity.dailyMets).to.equal(aboveThresholdMETs);
     });
@@ -740,7 +740,7 @@ describe('MOVINEarnV2', function () {
       // First activity recording should succeed
       await movinEarn.recordActivity(user1.address, 100, 1);
 
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(100);
       expect(activity.dailyMets).to.equal(1);
       expect(activity.lastUpdated).to.not.equal(0);
@@ -758,7 +758,7 @@ describe('MOVINEarnV2', function () {
     });
 
     it('Should accept activity above maximum daily limits but not reward it', async function () {
-      const initialActivity = await movinEarn.connect(user1).getTodayUserActivity();
+      const initialActivity = await movinEarn.getTodayUserActivity(user1.address);
       expect(initialActivity.dailySteps).to.equal(0);
       expect(initialActivity.dailyMets).to.equal(0);
 
@@ -775,7 +775,7 @@ describe('MOVINEarnV2', function () {
       expect(balanceAfter).to.equal(initialBalance);
 
       // Verify activity was recorded, but not rewarded
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(MAX_DAILY_STEPS + 1000);
       expect(activity.dailyMets).to.equal(0);
 
@@ -795,7 +795,7 @@ describe('MOVINEarnV2', function () {
       expect(balanceAfterMets).to.equal(initialBalanceMets);
 
       // Verify METs activity was recorded
-      const activityAfterMets = await movinEarn.connect(user1).getTodayUserActivity();
+      const activityAfterMets = await movinEarn.getTodayUserActivity(user1.address);
       expect(activityAfterMets.dailySteps).to.equal(MAX_DAILY_STEPS + 1000);
       expect(activityAfterMets.dailyMets).to.equal(MAX_DAILY_METS + 10);
     });
@@ -805,7 +805,7 @@ describe('MOVINEarnV2', function () {
       await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
 
       // Verify activity was recorded
-      let activity = await movinEarn.connect(user1).getTodayUserActivity();
+      let activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
       expect(activity.dailyMets).to.equal(METS_THRESHOLD);
 
@@ -815,7 +815,7 @@ describe('MOVINEarnV2', function () {
       await time.increase(secondsUntilMidnight);
 
       // Get activity after midnight
-      activity = await movinEarn.connect(user1).getTodayUserActivity();
+      activity = await movinEarn.getTodayUserActivity(user1.address);
 
       // Activity should be reset
       expect(activity.dailySteps).to.equal(0);
@@ -828,7 +828,7 @@ describe('MOVINEarnV2', function () {
       const balanceAfter = await movinToken.balanceOf(user1.address);
 
       // Verify activity was recorded for the new day
-      activity = await movinEarn.connect(user1).getTodayUserActivity();
+      activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
       expect(activity.dailyMets).to.equal(METS_THRESHOLD);
     });
@@ -902,7 +902,7 @@ describe('MOVINEarnV2', function () {
       await movinEarn.recordActivity(user1.address, belowThresholdSteps, belowThresholdMETs);
 
       // Verify activity was recorded but no rewards yet
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(belowThresholdSteps);
       expect(activity.dailyMets).to.equal(belowThresholdMETs);
 
@@ -915,7 +915,7 @@ describe('MOVINEarnV2', function () {
       const finalBalance = await movinToken.balanceOf(user1.address);
 
       // Verify reaching thresholds triggered rewards
-      const activity2 = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity2 = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity2.dailySteps).to.equal(STEPS_THRESHOLD);
       expect(activity2.dailyMets).to.equal(METS_THRESHOLD);
       expect(finalBalance).to.equal(initialBalance + ethers.parseEther('2'));
@@ -926,7 +926,7 @@ describe('MOVINEarnV2', function () {
       await movinEarn.recordActivity(user1.address, 0, 0);
 
       // Verify no activity was recorded
-      const activity = await movinEarn.connect(user1).getTodayUserActivity();
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(0);
       expect(activity.dailyMets).to.equal(0);
 
@@ -934,7 +934,7 @@ describe('MOVINEarnV2', function () {
       await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
 
       // Verify activity was recorded
-      const updatedActivity = await movinEarn.connect(user1).getTodayUserActivity();
+      const updatedActivity = await movinEarn.getTodayUserActivity(user1.address);
       expect(updatedActivity.dailySteps).to.equal(STEPS_THRESHOLD);
       expect(updatedActivity.dailyMets).to.equal(METS_THRESHOLD);
     });

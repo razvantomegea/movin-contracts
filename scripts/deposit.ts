@@ -44,9 +44,9 @@ async function main() {
   // await depositTx.wait();
   // console.log("✅ Deposit successful");
 
-  const userActivity = await movinEarnV2.userActivities(wallet.address);
+  const userActivities = await movinEarnV2.userActivities(wallet.address);
   console.log(
-    `User activity: ${userActivity.dailySteps} steps, ${userActivity.dailyMets} mets, ${userActivity.lastUpdated} updated, ${userActivity.pendingStepsRewards} steps rewards, ${userActivity.pendingMetsRewards} mets rewards, ${userActivity.lastRewardAccumulationTime} last reward accumulation time, ${userActivity.lastUpdated} last updated`
+    `User activity: ${userActivities.dailySteps} steps, ${userActivities.dailyMets} mets, ${userActivities.lastUpdated} updated, ${userActivities.pendingStepsRewards} steps rewards, ${userActivities.pendingMetsRewards} mets rewards, ${userActivities.lastRewardAccumulationTime} last reward accumulation time, ${userActivities.lastUpdated} last updated`
   );
 
   const latestBlock = await provider.getBlock('latest');
@@ -75,10 +75,8 @@ async function main() {
   const premiumStatus = await movinEarnV2.getPremiumStatus(wallet.address);
   console.log(`Premium status: ${premiumStatus}`);
 
-  const rewards = await movinEarnV2
-    .connect(wallet)
-    .calculateActivityRewards(wallet.address, 4000, 21);
-  console.log(`Rewards: ${rewards}`);
+  const userActivity = await movinEarnV2.getTodayUserActivity(wallet.address);
+  console.log(`User activity: ${userActivity}`);
 }
 
 main().catch(error => {
