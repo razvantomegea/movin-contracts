@@ -1,28 +1,47 @@
-# MOVINEarnV2 Whitepaper
+# Movin Whitepaper
 
-## Overview
+## Project Overview
 
-MOVINEarnV2 is a smart contract that implements a token-based rewards system for physical activity tracking. The system combines staking mechanics with activity-based rewards, featuring a referral system and premium user benefits.
+Movin is a revolutionary move-to-earn application built on the Base Layer-2 chain of Ethereum that rewards users for their physical activity. Our mission is to promote healthier lifestyles by incentivizing regular exercise through cryptocurrency rewards.
+
+By converting steps and metabolic equivalent of task (METs) into MVN tokens, we create a sustainable ecosystem where fitness and financial rewards go hand in hand. Our vision is to build a global community of health-conscious individuals who are motivated to stay active and earn rewards simultaneously.
+
+## Problem & Solution
+
+### The Problem
+
+Despite knowing the benefits of regular physical activity, many people struggle to maintain consistent exercise habits. Traditional fitness apps lack compelling incentives to keep users engaged long-term, leading to high dropout rates and abandoned fitness goals.
+
+### Our Solution
+
+Movin transforms the fitness experience by introducing tangible, financial rewards for physical activity. By leveraging blockchain technology, we create a transparent, secure system where users earn MVN tokens for their steps and metabolic activity. This creates a powerful incentive loop that encourages consistent exercise habits.
+
+Our app includes sophisticated verification mechanisms to ensure rewards are earned through genuine physical activity, maintaining the integrity of our ecosystem while promoting healthier lifestyles.
 
 ## Core Components
 
-### 1. Token System (MovinToken)
+### 1. Token System (MVN)
 
 - Built on ERC20 standard
 - Implements pausable functionality for emergency situations
 - Has a maximum supply limit (1 trillion)
+- Initial supply of 11 billion tokens
 - Supports minting and burning operations
-- Token ownership is managed by the MOVINEarnV2 contract (or initial deployer)
-- **V2 Feature**: Token locking mechanism allowing users to lock their own tokens for a specified duration.
+- Token ownership is managed by the MOVINEarnV2 contract
+- Token locking mechanism allowing users to lock their own tokens for a specified duration
+- Deflationary design with multiple burning mechanisms: unstaking fee (1%), premium subscription payments
 
 ### 2. Staking System
 
-#### Lock Periods
+#### Lock Periods and APY
 
-- Supports multiple lock periods: 1, 3, 6, 12, and 24 months
-- Each lock period has a corresponding multiplier (1x, 3x, 6x, 12x, 24x)
-- Users can have multiple stakes with different lock periods
-- 24-month lock period is reserved for premium users only
+| Lock Period | Multiplier | Availability | APY |
+| ----------- | ---------- | ------------ | --- |
+| 1 Month     | 1x         | All Users    | 4%  |
+| 3 Months    | 3x         | All Users    | 8%  |
+| 6 Months    | 6x         | All Users    | 12% |
+| 12 Months   | 12x        | All Users    | 18% |
+| 24 Months   | 24x        | Premium Only | 24% |
 
 #### Staking Rewards
 
@@ -47,35 +66,43 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 
 #### Steps Tracking
 
-- Daily steps threshold: 10,000 steps (no rewards below and no more steps adding above)
-- After each claim rewards, steps should remain at 10,000
+- Daily steps threshold: 10,000 steps
 - Maximum daily steps: 30,000 steps (no rewards above)
-- Rate limit: 300 steps per minute (no rewards for more than 300 steps per minute)
+- Rate limit: 300 steps per minute
 - Rewards: 1 MVN per 10,000 steps (0.1% decrease per day)
-- Resets at midnight ((based on activity timestamp))
+- Resets at midnight (based on activity timestamp)
 
 #### METs (Metabolic Equivalent of Task) Tracking
 
-- Daily METs threshold: 10 METs (no rewards below and no more METs adding above)
-- After each claim rewards, METs should remain at 10
+- Daily METs threshold: 10 METs
 - Maximum daily METs: 500 METs (no rewards above)
-- Rate limit: 5 METs per minute (no rewards for more than 5 mets per minute)
+- Rate limit: 5 METs per minute
 - Only available for premium users
 - Rewards: 1 MVN per 10 METs (0.1% decrease per day)
 - Resets at midnight (based on activity timestamp)
 
-### 4. Premium User System
+### 4. Subscription Plans
 
-- Premium users can earn additional rewards through METs tracking
-- Premium users can stake for the extended 24-month lock period
-- Premium status is self-service and can be activated by any user
-- Two subscription options:
-  - Monthly: 100 MVN tokens for 30 days of premium access
-  - Yearly: 1000 MVN tokens for 365 days of premium access
-- Premium status automatically expires after the subscription period ends
-- Premium status can be renewed by making another payment
-- Users can check their premium status, amount paid, and expiration time
-- The tokens paid for the subscription are burnt
+#### Free Plan (Basic)
+
+- 0 MVN / forever
+- Basic step tracking (10,000-30,000 steps daily)
+- Earn MVN tokens for activity
+- Staking options up to 12 months
+- Referral program (1 MVN bonus for both parties + 1% rewards)
+- Import activity from Apple Health & Google Fit
+- Contains advertisements
+
+#### Premium Plan (Advanced)
+
+- 100 MVN / month or 1000 MVN / year (save 16%)
+- Everything in Free plan
+- MET tracking (10-500 METs daily)
+- Ad-free experience
+- Exclusive 24-month staking with 24% APY
+- Access to maps and route tracking (soon)
+- Friend sync for joint exercises (soon)
+- AI based calorie tracking (soon)
 
 ### 5. Referral System
 
@@ -113,7 +140,7 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
   - Pause/unpause the contract
   - Mint tokens
   - Update lock period multipliers
-  - Recover ERC20 tokens (except MOVIN token)
+  - Recover ERC20 tokens (except MVN token)
   - Verify reward rates consistency
 
 ## Technical Details
@@ -151,8 +178,6 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - ReferralBonusPaid: Emitted when referral bonus is paid
 - AllStakingRewardsClaimed: Emitted when all staking rewards are claimed
 - Minted: Emitted when tokens are minted
-- UserDataMigrated: Emitted when user data is migrated
-- BulkMigrationCompleted: Emitted when bulk migration is completed
 - TokensLocked (from MovinToken): Emitted when tokens are locked
 - TokensUnlocked (from MovinToken): Emitted when tokens are unlocked
 
@@ -188,22 +213,60 @@ MOVINEarnV2 is a smart contract that implements a token-based rewards system for
 - Storage gaps are maintained for future upgrades
 - Migration functions ensure smooth upgrades
 
-## Test Coverage
+## Roadmap
 
-The contract has comprehensive test coverage including:
+### Q1-Q2 2025: MVP Launch
 
-- Initialization tests
-- Staking functionality tests
-- Activity recording and rewards tests
-- Daily reward rate decrease tests
-- Referral system tests
-- Administrative function tests
-- Migration functionality tests
-- Activity history tests
-- Referral rewards tests
-- Token functionality tests
-- Premium status management tests
-- Premium features access control tests
-- Premium expiration tests
+- MVN contracts launch on the Base Layer-2 chain of Ethereum
+- Core step and METs tracking functionality
+- Basic staking mechanisms implementation
+- Premium user features including HealthKit and Google Fit integration
+- Referral program
+- App launch on Apple Store and Google Play
+- Public token listing on Uniswap, Gate.io, and Base
 
-All tests are passing, indicating robust implementation of the contract's features.
+### Q3-Q4 2025: Social Feed Features
+
+- Social feed for sharing achievements
+- Enhanced social interactions and activity sharing
+- Custom route creation and sharing
+
+### Q1 2026: Advanced Geolocation Features
+
+- Friend sync for joint exercises and shared rewards
+- Group activity tracking and leaderboards
+- Location and route tracking with interactive maps
+
+### Q2 2026: Gamified Experience
+
+- Community challenges with special rewards
+- Achievement badges and milestone rewards
+
+### Q3 2026: AI Integration
+
+- AI based calorie tracking
+- AI based personalized fitness recommendations
+
+### Q4 2026: Borrowing
+
+- Ability to borrow MVN tokens from the protocol
+
+### 2027: Partnerships
+
+- Partnerships with fitness brands and organizations
+- MVN token listing on more exchanges
+- More features and integrations
+
+## Team
+
+### Razvan Tomegea
+
+**Founder & Core Developer**
+
+Blockchain developer and entrepreneur based in Romania. Passionate about fitness and technology, with 11 years of experience.
+
+### AI
+
+**Core Developer Assistant**
+
+Advanced AI system that helps with development, user assistance, and data analysis to optimize the Movin experience.

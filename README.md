@@ -1,10 +1,14 @@
 # Movin Smart Contracts
 
-This project contains the smart contracts for the Movin ecosystem, built with Solidity, Hardhat, and OpenZeppelin. The contracts are designed to be deployed on Ethereum and compatible EVM networks.
+This project contains the smart contracts for the Movin ecosystem, a move-to-earn application built on the Base Layer-2 chain of Ethereum that rewards users for their physical activity.
+
+## Project Overview
+
+Movin incentivizes regular exercise through cryptocurrency rewards. By converting steps and metabolic equivalent of task (METs) into MVN tokens, we create a sustainable ecosystem where fitness and financial rewards go hand in hand. Our vision is to build a global community of health-conscious individuals who are motivated to stay active and earn rewards simultaneously.
 
 ## Contracts
 
-### MovinToken (MOVIN) / MovinToken
+### MovinToken (MVN)
 
 An upgradable ERC20 token with the following features:
 
@@ -13,37 +17,47 @@ An upgradable ERC20 token with the following features:
 - Owner-controlled minting with max supply cap of 1 trillion tokens
 - Burn functionality allowing token destruction to reduce total supply
 - Custom validation (zero address checks, amount validation)
-- V2: Token locking mechanism (`lockTokens`, `unlockTokens`)
+- Token locking mechanism (`lockTokens`, `unlockTokens`)
 
-### MOVINEarn / MOVINEarnV2
+### MOVINEarn
 
 A staking and rewards contract that integrates with fitness activity tracking:
 
-- Stake MOVIN tokens with different lock periods (1, 3, 6, 12, 24 months)
-- Higher rewards for longer lock periods
+- Stake MVN tokens with different lock periods (1, 3, 6, 12, 24 months)
+- Higher rewards for longer lock periods (up to 24% APY for 24-month staking)
 - Record daily steps and MET (Metabolic Equivalent of Task) activity
 - Premium user features with enhanced rewards
-- Automatic rewards rate decrease (V1: yearly halving, V2: 0.1% daily decrease)
+- Automatic rewards rate decrease (0.1% daily decrease)
 - Migration capabilities for contract upgrades
 - Emergency pause functionality
-- V2: Strict enforcement of lock periods for staking
-- V2: Owner-only premium status control
+- Strict enforcement of lock periods for staking
+- Referral system with 1% bonuses
 
 ## Key Features
 
 ### Token Burning
 
-The MOVIN token includes burn functionality:
+The MVN token includes burn functionality:
 
 - `burn(uint256 amount)`: allows users to burn their own tokens
 - `burnFrom(address account, uint256 amount)`: allows authorized spenders to burn tokens from other accounts
+- Premium subscription payments (100 MVN monthly or 1000 MVN yearly) are burned
+- 1% burn fee applied when unstaking tokens
 
 ### Staking and Rewards
 
-- Various lock periods with different multipliers (24-month requires premium)
-- Reward calculation based on staking amount, lock period, and time
+- Various lock periods with different multipliers:
+  | Lock Period | Multiplier | Availability | APY |
+  |-------------|------------|--------------|-----|
+  | 1 Month | 1x | All Users | 4% |
+  | 3 Months | 3x | All Users | 8% |
+  | 6 Months | 6x | All Users | 12% |
+  | 12 Months | 12x | All Users | 18% |
+  | 24 Months | 24x | Premium Only | 24% |
+- Reward calculation based on: stake amount × APR × time staked
 - **No burn fee** applied when claiming staking or activity rewards
-- 1% burn fee applied only when unstaking tokens (`UNSTAKE_BURN_FEES_PERCENT`)
+- 1% burn fee applied only when unstaking tokens
+- Restaking option to avoid unstaking fee when lock period expires
 
 ### Activity Tracking
 
@@ -51,19 +65,29 @@ The MOVIN token includes burn functionality:
 - MET tracking (premium users) with 10 MET threshold (Max daily: 500)
 - Automatic reset at midnight
 - Per-minute limits enforced: 300 steps/min, 5 METs/min
-- Rewards (staking and activity) expire if not claimed within 1 day
+- Activity rewards: 1 MVN per 10,000 steps or 10 METs
+- Rewards rates decrease by 0.1% daily, compounded
 
 ### Premium Benefits
 
 - Access to MET-based rewards
 - Enhanced earning potential
-- Ability to stake for the 24-month lock period
+- Ability to stake for the 24-month lock period (24% APY)
+- Ad-free experience in the app
+- Future features including maps, route tracking, and AI-based calorie tracking
 
-### Referral System (V2)
+### Subscription Plans
+
+- **Free Plan**: Basic step tracking, earn MVN tokens, staking up to 12 months, referral program
+- **Premium Plan**: 100 MVN/month or 1000 MVN/year, includes MET tracking, ad-free experience, exclusive 24-month staking with 24% APY, and access to future premium features
+
+### Referral System
 
 - Users can register a referrer
+- Both referrer and referee receive 1 MVN token upon registration
 - Referrers receive 1% of referee's claimed activity rewards
 - Activity bonuses are added to referrer's daily activity
+- Users can have multiple referrals, but each user can only have one referrer
 
 ## Prerequisites
 
@@ -328,3 +352,47 @@ When recording activity, be mindful of the time-based limits:
 ## License
 
 MIT
+
+## Roadmap
+
+### Q1-Q2 2025: MVP Launch
+
+- MVN contracts launch on the Base Layer-2 chain of Ethereum
+- Core step and METs tracking functionality
+- Basic staking mechanisms implementation
+- Premium user features including HealthKit and Google Fit integration
+- Referral program
+- App launch on Apple Store and Google Play
+- Public token listing on Uniswap, Gate.io, and Base
+
+### Q3-Q4 2025: Social Feed Features
+
+- Social feed for sharing achievements
+- Enhanced social interactions and activity sharing
+- Custom route creation and sharing
+
+### Q1 2026: Advanced Geolocation Features
+
+- Friend sync for joint exercises and shared rewards
+- Group activity tracking and leaderboards
+- Location and route tracking with interactive maps
+
+### Q2 2026: Gamified Experience
+
+- Community challenges with special rewards
+- Achievement badges and milestone rewards
+
+### Q3 2026: AI Integration
+
+- AI based calorie tracking
+- AI based personalized fitness recommendations
+
+### Q4 2026: Borrowing
+
+- Ability to borrow MVN tokens from the protocol
+
+### 2027: Partnerships
+
+- Partnerships with fitness brands and organizations
+- MVN token listing on more exchanges
+- More features and integrations
