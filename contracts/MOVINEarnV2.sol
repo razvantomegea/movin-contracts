@@ -126,6 +126,8 @@ contract MOVINEarnV2 is
 
   uint256 public constant STEPS_THRESHOLD = 10_000;
   uint256 public constant METS_THRESHOLD = 10;
+  uint256 public constant PREMIUM_STEPS_THRESHOLD = 5_000;
+  uint256 public constant PREMIUM_METS_THRESHOLD = 5;
   uint256 public rewardHalvingTimestamp;
   uint256 public baseStepsRate;
   uint256 public baseMetsRate;
@@ -401,10 +403,13 @@ contract MOVINEarnV2 is
     uint256 stepsReward = 0;
     uint256 todaySteps = dailySteps + newSteps;
 
-    if (dailySteps >= STEPS_THRESHOLD && dailySteps < MAX_DAILY_STEPS) {
-      stepsReward = (newSteps * baseStepsRate) / STEPS_THRESHOLD;
-    } else if (todaySteps >= STEPS_THRESHOLD && todaySteps <= MAX_DAILY_STEPS) {
-      stepsReward = (todaySteps * baseStepsRate) / STEPS_THRESHOLD;
+    // Use different thresholds for premium users
+    uint256 stepsThreshold = premiumData.status ? PREMIUM_STEPS_THRESHOLD : STEPS_THRESHOLD;
+
+    if (dailySteps >= stepsThreshold && dailySteps < MAX_DAILY_STEPS) {
+      stepsReward = (newSteps * baseStepsRate) / stepsThreshold;
+    } else if (todaySteps >= stepsThreshold && todaySteps <= MAX_DAILY_STEPS) {
+      stepsReward = (todaySteps * baseStepsRate) / stepsThreshold;
     }
 
     if (!premiumData.status) {
@@ -414,10 +419,10 @@ contract MOVINEarnV2 is
     uint256 metsReward = 0;
     uint256 todayMets = dailyMets + newMets;
 
-    if (dailyMets >= METS_THRESHOLD && dailyMets < MAX_DAILY_METS) {
-      metsReward = (newMets * baseMetsRate) / METS_THRESHOLD;
-    } else if (todayMets >= METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
-      metsReward = (todayMets * baseMetsRate) / METS_THRESHOLD;
+    if (dailyMets >= PREMIUM_METS_THRESHOLD && dailyMets < MAX_DAILY_METS) {
+      metsReward = (newMets * baseMetsRate) / PREMIUM_METS_THRESHOLD;
+    } else if (todayMets >= PREMIUM_METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
+      metsReward = (todayMets * baseMetsRate) / PREMIUM_METS_THRESHOLD;
     }
 
     return (stepsReward, metsReward, todaySteps, todayMets);

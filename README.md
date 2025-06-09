@@ -61,16 +61,17 @@ The MVN token includes burn functionality:
 
 ### Activity Tracking
 
-- Daily steps with 10,000 steps threshold for rewards (Max daily: 30,000)
-- MET tracking (premium users) with 10 MET threshold (Max daily: 500)
+- Daily steps with different thresholds: 10,000 steps (free users), 5,000 steps (premium users) for rewards (Max daily: 30,000)
+- MET tracking (premium users only) with 5 MET threshold (Max daily: 500)
 - Automatic reset at midnight
 - Per-minute limits enforced: 300 steps/min, 5 METs/min
-- Activity rewards: 1 MVN per 10,000 steps or 10 METs
+- Activity rewards: 1 MVN per threshold reached (5,000 steps for premium, 10,000 for free; 5 METs for premium)
 - Rewards rates decrease by 0.1% daily, compounded
 
 ### Premium Benefits
 
-- Access to MET-based rewards
+- Lower step threshold for rewards (5,000 vs 10,000 steps)
+- Access to MET-based rewards (5 MET threshold)
 - Enhanced earning potential
 - Ability to stake for the 24-month lock period (24% APY)
 - Ad-free experience in the app
@@ -78,8 +79,8 @@ The MVN token includes burn functionality:
 
 ### Subscription Plans
 
-- **Free Plan**: Basic step tracking, earn MVN tokens, staking up to 12 months, referral program
-- **Premium Plan**: 100 MVN/month or 1000 MVN/year, includes MET tracking, ad-free experience, exclusive 24-month staking with 24% APY, and access to future premium features
+- **Free Plan**: Basic step tracking (10,000 step threshold), earn MVN tokens, staking up to 12 months, referral program
+- **Premium Plan**: 100 MVN/month or 1000 MVN/year, includes lower step threshold (5,000 steps), MET tracking (5 MET threshold), ad-free experience, exclusive 24-month staking with 24% APY, and access to future premium features
 
 ### Referral System
 
@@ -235,7 +236,7 @@ await earnV2.getUserReferrals(user1.address); // Should include user2
 
 // Test activity recording (respect limits)
 await time.increase(60); // Ensure enough time passed
-await earnV2.connect(user1).recordActivity(10000, 10); // Record steps and METs
+await earnV2.connect(user1).recordActivity(5000, 5); // Record steps and METs (premium thresholds)
 await earnV2.connect(user1).getPendingRewards();
 
 // Test reward claiming

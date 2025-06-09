@@ -15,6 +15,8 @@ describe('MOVINEarnV2', function () {
   // Constants
   const STEPS_THRESHOLD = 10_000;
   const METS_THRESHOLD = 10;
+  const PREMIUM_STEPS_THRESHOLD = 5_000;
+  const PREMIUM_METS_THRESHOLD = 5;
   const MAX_DAILY_STEPS = 30_000;
   const MAX_DAILY_METS = 500;
   const MAX_STEPS_PER_MINUTE = 300;
@@ -622,19 +624,19 @@ describe('MOVINEarnV2', function () {
       // Get initial balance
       const initialBalance = await movinToken.balanceOf(user1.address);
 
-      // Record exactly the threshold steps (10,000)
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, 0);
+      // Record exactly the premium threshold steps (5,000) for premium user
+      await movinEarn.recordActivity(user1.address, PREMIUM_STEPS_THRESHOLD, 0);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
 
-      // Expected reward is 1 token for meeting STEPS_THRESHOLD
+      // Expected reward is 1 token for meeting PREMIUM_STEPS_THRESHOLD
       const expectedReward = ethers.parseEther('1');
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
 
       // Verify activity was recorded
       const activity = await movinEarn.getTodayUserActivity(user1.address);
-      expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
+      expect(activity.dailySteps).to.equal(PREMIUM_STEPS_THRESHOLD);
       expect(activity.dailyMets).to.equal(0);
     });
 
@@ -642,20 +644,43 @@ describe('MOVINEarnV2', function () {
       // Get initial balance
       const initialBalance = await movinToken.balanceOf(user1.address);
 
-      // Record exactly the threshold METs (10)
-      await movinEarn.recordActivity(user1.address, 0, METS_THRESHOLD);
+      // Record exactly the premium threshold METs (5)
+      await movinEarn.recordActivity(user1.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
 
-      // Expected reward is 1 token for meeting METS_THRESHOLD (only for premium)
+      // Expected reward is 1 token for meeting PREMIUM_METS_THRESHOLD (only for premium)
       const expectedReward = ethers.parseEther('1');
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
 
       // Verify activity was recorded
       const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(0);
-      expect(activity.dailyMets).to.equal(METS_THRESHOLD);
+      expect(activity.dailyMets).to.equal(PREMIUM_METS_THRESHOLD);
+    });
+
+    it('Should correctly record steps activity for non-premium users with higher threshold', async function () {
+      // Get initial balance
+      const initialBalance = await movinToken.balanceOf(user2.address);
+
+      // Ensure user2 is not premium
+      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+
+      // Record exactly the regular threshold steps (10,000) for non-premium user
+      await movinEarn.recordActivity(user2.address, STEPS_THRESHOLD, 0);
+
+      // Get balance after activity
+      const balanceAfter = await movinToken.balanceOf(user2.address);
+
+      // Expected reward is 1 token for meeting STEPS_THRESHOLD
+      const expectedReward = ethers.parseEther('1');
+      expect(balanceAfter - initialBalance).to.equal(expectedReward);
+
+      // Verify activity was recorded
+      const activity = await movinEarn.getTodayUserActivity(user2.address);
+      expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
+      expect(activity.dailyMets).to.equal(0);
     });
 
     it('Should not reward METs activity for non-premium users', async function () {
@@ -665,8 +690,8 @@ describe('MOVINEarnV2', function () {
       // Ensure user2 is not premium
       await movinEarn.connect(user2).setPremiumStatus(false, 0);
 
-      // Record exactly the threshold METs (10)
-      await movinEarn.recordActivity(user2.address, 0, METS_THRESHOLD);
+      // Record exactly the premium threshold METs (5)
+      await movinEarn.recordActivity(user2.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user2.address);
@@ -684,8 +709,12 @@ describe('MOVINEarnV2', function () {
       // Get initial balance
       const initialBalance = await movinToken.balanceOf(user1.address);
 
-      // Record both steps and METs at threshold
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Record both steps and METs at premium threshold
+      await movinEarn.recordActivity(
+        user1.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
@@ -700,15 +729,15 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user1.address);
 
       // Record activity above threshold but below maximum
-      const aboveThresholdSteps = STEPS_THRESHOLD + 5000; // 1.5 for steps
-      const aboveThresholdMETs = METS_THRESHOLD + 10; // 2 for METs
+      const aboveThresholdSteps = PREMIUM_STEPS_THRESHOLD + 5000; // 2 for steps (10000/5000)
+      const aboveThresholdMETs = PREMIUM_METS_THRESHOLD + 10; // 3 for METs (15/5)
 
       await movinEarn.recordActivity(user1.address, aboveThresholdSteps, aboveThresholdMETs);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
 
-      const expectedReward = ethers.parseEther('3.5');
+      const expectedReward = ethers.parseEther('5');
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
 
       // Verify activity was recorded at threshold values
@@ -801,13 +830,17 @@ describe('MOVINEarnV2', function () {
     });
 
     it('Should reset activity at midnight', async function () {
-      // Record activity
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Record activity (premium user gets lower thresholds)
+      await movinEarn.recordActivity(
+        user1.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Verify activity was recorded
       let activity = await movinEarn.getTodayUserActivity(user1.address);
-      expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
-      expect(activity.dailyMets).to.equal(METS_THRESHOLD);
+      expect(activity.dailySteps).to.equal(PREMIUM_STEPS_THRESHOLD);
+      expect(activity.dailyMets).to.equal(PREMIUM_METS_THRESHOLD);
 
       // Advance time to next day (past midnight)
       const currentTimestamp = await time.latest();
@@ -822,15 +855,19 @@ describe('MOVINEarnV2', function () {
       expect(activity.dailyMets).to.equal(0);
 
       // Record new activity for the new day
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      await movinEarn.recordActivity(
+        user1.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Get balance
       const balanceAfter = await movinToken.balanceOf(user1.address);
 
       // Verify activity was recorded for the new day
       activity = await movinEarn.getTodayUserActivity(user1.address);
-      expect(activity.dailySteps).to.equal(STEPS_THRESHOLD);
-      expect(activity.dailyMets).to.equal(METS_THRESHOLD);
+      expect(activity.dailySteps).to.equal(PREMIUM_STEPS_THRESHOLD);
+      expect(activity.dailyMets).to.equal(PREMIUM_METS_THRESHOLD);
     });
 
     it('Should decrease reward rates by 0.1% daily', async function () {
@@ -840,8 +877,12 @@ describe('MOVINEarnV2', function () {
       // Advance time by 1 day
       await time.increase(ONE_DAY);
 
-      // Record activity to trigger rate decrease
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Record activity to trigger rate decrease (premium user)
+      await movinEarn.recordActivity(
+        user1.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Get new rates
       const [newStepsRate, newMetsRate] = await movinEarn.getBaseRates();
@@ -869,8 +910,12 @@ describe('MOVINEarnV2', function () {
         .approve(await movinEarn.getAddress(), ethers.parseEther('1000'));
       await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
 
-      // Record activity for referee (user2)
-      await movinEarn.recordActivity(user2.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Record activity for referee (user2) - using premium thresholds
+      await movinEarn.recordActivity(
+        user2.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Get final balances
       const referrerFinalBalance = await movinToken.balanceOf(user1.address);
@@ -894,9 +939,9 @@ describe('MOVINEarnV2', function () {
     });
 
     it('Should correctly handle partial activity below thresholds', async function () {
-      // Record activity below thresholds
-      const belowThresholdSteps = STEPS_THRESHOLD - 1000;
-      const belowThresholdMETs = METS_THRESHOLD - 2;
+      // Record activity below premium thresholds
+      const belowThresholdSteps = PREMIUM_STEPS_THRESHOLD - 1000;
+      const belowThresholdMETs = PREMIUM_METS_THRESHOLD - 2;
       const initialBalance = await movinToken.balanceOf(user1.address);
 
       await movinEarn.recordActivity(user1.address, belowThresholdSteps, belowThresholdMETs);
@@ -908,7 +953,7 @@ describe('MOVINEarnV2', function () {
 
       await time.increase(60 * 5); // 5 minutes
 
-      // Record more activity to reach thresholds
+      // Record more activity to reach premium thresholds
       await movinEarn.recordActivity(user1.address, 1000, 2);
 
       // Get balance after reaching thresholds
@@ -916,8 +961,8 @@ describe('MOVINEarnV2', function () {
 
       // Verify reaching thresholds triggered rewards
       const activity2 = await movinEarn.getTodayUserActivity(user1.address);
-      expect(activity2.dailySteps).to.equal(STEPS_THRESHOLD);
-      expect(activity2.dailyMets).to.equal(METS_THRESHOLD);
+      expect(activity2.dailySteps).to.equal(PREMIUM_STEPS_THRESHOLD);
+      expect(activity2.dailyMets).to.equal(PREMIUM_METS_THRESHOLD);
       expect(finalBalance).to.equal(initialBalance + ethers.parseEther('2'));
     });
 
@@ -930,13 +975,17 @@ describe('MOVINEarnV2', function () {
       expect(activity.dailySteps).to.equal(0);
       expect(activity.dailyMets).to.equal(0);
 
-      // Then record valid activity
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Then record valid activity (premium user)
+      await movinEarn.recordActivity(
+        user1.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Verify activity was recorded
       const updatedActivity = await movinEarn.getTodayUserActivity(user1.address);
-      expect(updatedActivity.dailySteps).to.equal(STEPS_THRESHOLD);
-      expect(updatedActivity.dailyMets).to.equal(METS_THRESHOLD);
+      expect(updatedActivity.dailySteps).to.equal(PREMIUM_STEPS_THRESHOLD);
+      expect(updatedActivity.dailyMets).to.equal(PREMIUM_METS_THRESHOLD);
     });
 
     it('Should not allow activity recording when contract is paused', async function () {
@@ -945,29 +994,37 @@ describe('MOVINEarnV2', function () {
 
       // Try to record activity
       await expect(
-        movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD)
+        movinEarn.recordActivity(user1.address, PREMIUM_STEPS_THRESHOLD, PREMIUM_METS_THRESHOLD)
       ).to.be.revertedWithCustomError(movinEarn, 'ContractPaused');
 
       // Unpause the contract
       await movinEarn.connect(owner).emergencyUnpause();
 
-      // Now activity recording should work
-      await movinEarn.recordActivity(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Now activity recording should work (premium user)
+      await movinEarn.recordActivity(
+        user1.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
     });
 
     it('Should calculate rewards correctly', async function () {
       // Set up premium status
       await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
 
-      // Test calculating rewards directly
+      // Test calculating rewards directly (premium user with lower thresholds)
       const [stepsReward, metsReward, totalSteps, totalMets] =
-        await movinEarn.calculateActivityRewards(user1.address, STEPS_THRESHOLD, METS_THRESHOLD);
+        await movinEarn.calculateActivityRewards(
+          user1.address,
+          PREMIUM_STEPS_THRESHOLD,
+          PREMIUM_METS_THRESHOLD
+        );
 
       // Verify rewards calculation
       expect(stepsReward).to.equal(ethers.parseEther('1'));
       expect(metsReward).to.equal(ethers.parseEther('1'));
-      expect(totalSteps).to.equal(STEPS_THRESHOLD);
-      expect(totalMets).to.equal(METS_THRESHOLD);
+      expect(totalSteps).to.equal(PREMIUM_STEPS_THRESHOLD);
+      expect(totalMets).to.equal(PREMIUM_METS_THRESHOLD);
     });
   });
 
@@ -1063,16 +1120,20 @@ describe('MOVINEarnV2', function () {
       const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
       const refereeBalanceBefore = await movinToken.balanceOf(user2.address);
 
-      // Record activity to trigger automatic rewards
-      await movinEarn.recordActivity(user2.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Record activity to trigger automatic rewards (premium user)
+      await movinEarn.recordActivity(
+        user2.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Get balances after activity
       const referrerBalanceAfter = await movinToken.balanceOf(user1.address);
       const refereeBalanceAfter = await movinToken.balanceOf(user2.address);
 
       // Calculate expected rewards
-      const stepsReward = ethers.parseEther('1'); // 1 token for meeting STEPS_THRESHOLD
-      const metsReward = ethers.parseEther('1'); // 1 token for meeting METS_THRESHOLD
+      const stepsReward = ethers.parseEther('1'); // 1 token for meeting PREMIUM_STEPS_THRESHOLD
+      const metsReward = ethers.parseEther('1'); // 1 token for meeting PREMIUM_METS_THRESHOLD
       const totalReward = stepsReward + metsReward;
 
       // Calculate expected referral bonus (1% of total rewards)
@@ -1103,16 +1164,20 @@ describe('MOVINEarnV2', function () {
       const user2BalanceBefore = await movinToken.balanceOf(user2.address);
       const user1BalanceBefore = await movinToken.balanceOf(user1.address);
 
-      // Record activity for user2 to generate rewards
-      await movinEarn.recordActivity(user2.address, STEPS_THRESHOLD, METS_THRESHOLD);
+      // Record activity for user2 to generate rewards (premium user)
+      await movinEarn.recordActivity(
+        user2.address,
+        PREMIUM_STEPS_THRESHOLD,
+        PREMIUM_METS_THRESHOLD
+      );
 
       // Get balances after activity
       const user2BalanceAfter = await movinToken.balanceOf(user2.address);
       const user1BalanceAfter = await movinToken.balanceOf(user1.address);
 
       // Calculate expected rewards
-      const stepsReward = ethers.parseEther('1'); // 1 token for meeting STEPS_THRESHOLD
-      const metsReward = ethers.parseEther('1'); // 1 token for meeting METS_THRESHOLD
+      const stepsReward = ethers.parseEther('1'); // 1 token for meeting PREMIUM_STEPS_THRESHOLD
+      const metsReward = ethers.parseEther('1'); // 1 token for meeting PREMIUM_METS_THRESHOLD
       const totalReward = stepsReward + metsReward;
 
       // Calculate expected referral bonus
@@ -1251,7 +1316,7 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user2.address);
 
       // Record METs activity for non-premium user
-      await movinEarn.recordActivity(user2.address, 0, METS_THRESHOLD);
+      await movinEarn.recordActivity(user2.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user2.address);
@@ -1268,9 +1333,9 @@ describe('MOVINEarnV2', function () {
       // Save balance after becoming premium
       const balanceAfterPremium = await movinToken.balanceOf(user2.address);
 
-      // Record METs activity again
+      // Record METs activity again (now with premium thresholds)
       await time.increase(60); // Wait 1 minute to avoid rate limiting
-      await movinEarn.recordActivity(user2.address, 0, METS_THRESHOLD);
+      await movinEarn.recordActivity(user2.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity as premium user
       const balanceAfterActivity = await movinToken.balanceOf(user2.address);
