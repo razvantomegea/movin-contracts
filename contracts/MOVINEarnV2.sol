@@ -121,6 +121,8 @@ contract MOVINEarnV2 is
     uint256 oldStakeIndex
   );
 
+  event SignatureRequirementChanged(bool required);
+
   mapping(uint256 => uint256) public lockPeriodMultipliers;
   mapping(address => Stake[]) public userStakes;
   mapping(address => UserActivity) public userActivities;
@@ -161,8 +163,11 @@ contract MOVINEarnV2 is
   bytes32 private constant FUNCTION_CALL_TYPEHASH =
     keccak256('FunctionCall(address caller,bytes4 selector,uint256 nonce,uint256 deadline)');
 
+  // V2: Optional signature verification flag
+  bool public signatureRequired;
+
   // Storage gap for future upgrades
-  uint256[46] private __gap; // Changed from 48 to 46 to account for new signature verification variables
+  uint256[45] private __gap; // Changed from 46 to 45 to account for signatureRequired boolean
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -181,6 +186,7 @@ contract MOVINEarnV2 is
     rewardHalvingTimestamp = block.timestamp;
     baseStepsRate = 1 * 10 ** 18;
     baseMetsRate = 1 * 10 ** 18;
+    signatureRequired = true; // Default to requiring signatures
 
     lockPeriodMultipliers[1] = 1;
     lockPeriodMultipliers[3] = 3;
@@ -192,6 +198,7 @@ contract MOVINEarnV2 is
   // V2: Initialize function for upgrading to V2 (not used in actual upgrade since state is preserved)
   function initializeV2() public reinitializer(2) {
     __EIP712_init('MOVINEarnV2', '2');
+    signatureRequired = true; // Default to requiring signatures
     // No changes to rewardHalvingTimestamp to preserve the existing halving schedule
     // Note: rewardHalvingTimestamp is intentionally preserved from V1 to maintain reward decrease cadence
   }
@@ -206,25 +213,33 @@ contract MOVINEarnV2 is
     _;
   }
 
-  // V2: Modifier for signature verification
-  modifier withOwnerSignature(
+  // V2: Modified modifier for optional signature verification
+  modifier withOptionalSignature(
     bytes4 selector,
     uint256 nonce,
     uint256 deadline,
     bytes calldata signature
   ) {
-    if (block.timestamp > deadline) revert SignatureExpired();
-    if (nonce != nonces[msg.sender]) revert InvalidNonce();
+    if (signatureRequired) {
+      if (block.timestamp > deadline) revert SignatureExpired();
+      if (nonce != nonces[msg.sender]) revert InvalidNonce();
 
-    bytes32 digest = _hashTypedDataV4(
-      keccak256(abi.encode(FUNCTION_CALL_TYPEHASH, msg.sender, selector, nonce, deadline))
-    );
+      bytes32 digest = _hashTypedDataV4(
+        keccak256(abi.encode(FUNCTION_CALL_TYPEHASH, msg.sender, selector, nonce, deadline))
+      );
 
-    address signer = ECDSA.recover(digest, signature);
-    if (signer != owner()) revert InvalidSignature();
+      address signer = ECDSA.recover(digest, signature);
+      if (signer != owner()) revert InvalidSignature();
 
-    nonces[msg.sender]++;
+      nonces[msg.sender]++;
+    }
     _;
+  }
+
+  // V2: Owner function to toggle signature requirement
+  function setSignatureRequired(bool _required) external onlyOwner {
+    signatureRequired = _required;
+    emit SignatureRequirementChanged(_required);
   }
 
   function stakeTokens(
@@ -237,7 +252,7 @@ contract MOVINEarnV2 is
     external
     nonReentrant
     whenNotPausedWithRevert
-    withOwnerSignature(this.stakeTokens.selector, nonce, deadline, signature)
+    withOptionalSignature(this.stakeTokens.selector, nonce, deadline, signature)
   {
     if (amount == 0) revert ZeroAmountNotAllowed();
     if (lockPeriodMultipliers[lockMonths] == 0) revert InvalidLockPeriod(lockMonths);
@@ -267,7 +282,7 @@ contract MOVINEarnV2 is
     external
     nonReentrant
     whenNotPausedWithRevert
-    withOwnerSignature(this.claimStakingRewards.selector, nonce, deadline, signature)
+    withOptionalSignature(this.claimStakingRewards.selector, nonce, deadline, signature)
   {
     uint256 stakeCount = userStakes[msg.sender].length;
 
@@ -304,7 +319,7 @@ contract MOVINEarnV2 is
     external
     nonReentrant
     whenNotPausedWithRevert
-    withOwnerSignature(this.claimAllStakingRewards.selector, nonce, deadline, signature)
+    withOptionalSignature(this.claimAllStakingRewards.selector, nonce, deadline, signature)
   {
     uint256 stakeCount = userStakes[msg.sender].length;
     if (stakeCount == 0) revert NoRewardsAvailable();
@@ -350,7 +365,7 @@ contract MOVINEarnV2 is
     external
     nonReentrant
     whenNotPausedWithRevert
-    withOwnerSignature(this.unstake.selector, nonce, deadline, signature)
+    withOptionalSignature(this.unstake.selector, nonce, deadline, signature)
   {
     uint256 stakeCount = userStakes[msg.sender].length;
 
@@ -384,7 +399,7 @@ contract MOVINEarnV2 is
     external
     nonReentrant
     whenNotPausedWithRevert
-    withOwnerSignature(this.restake.selector, nonce, deadline, signature)
+    withOptionalSignature(this.restake.selector, nonce, deadline, signature)
   {
     uint256 stakeCount = userStakes[msg.sender].length;
 
@@ -543,7 +558,7 @@ contract MOVINEarnV2 is
   )
     external
     whenNotPausedWithRevert
-    withOwnerSignature(this.recordActivity.selector, nonce, deadline, signature)
+    withOptionalSignature(this.recordActivity.selector, nonce, deadline, signature)
   {
     // Skip validation completely if both inputs are zero
     // This allows referral registration to work properly
@@ -690,7 +705,7 @@ contract MOVINEarnV2 is
   )
     external
     whenNotPausedWithRevert
-    withOwnerSignature(this.registerReferral.selector, nonce, deadline, signature)
+    withOptionalSignature(this.registerReferral.selector, nonce, deadline, signature)
   {
     if (referrer == address(0) || referrer == msg.sender) {
       revert InvalidReferrer();
@@ -772,7 +787,7 @@ contract MOVINEarnV2 is
     payable
     whenNotPausedWithRevert
     nonReentrant
-    withOwnerSignature(this.deposit.selector, nonce, deadline, signature)
+    withOptionalSignature(this.deposit.selector, nonce, deadline, signature)
   {
     // Check if the amount is greater than zero
     if (amount == 0) {
@@ -806,7 +821,7 @@ contract MOVINEarnV2 is
   )
     external
     whenNotPausedWithRevert
-    withOwnerSignature(this.setPremiumStatus.selector, nonce, deadline, signature)
+    withOptionalSignature(this.setPremiumStatus.selector, nonce, deadline, signature)
   {
     if (status) {
       uint256 expirationTime;

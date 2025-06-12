@@ -56,6 +56,20 @@ async function checkCurrentData() {
 async function migrateAllData(deployer: any, originalData: any) {
   console.log('Starting migration process...');
 
+  // First, we need to import the existing proxy since it wasn't deployed with upgrades plugin
+  console.log('Importing existing proxy contract...');
+  const MOVINEarnV1 = await ethers.getContractFactory('MOVINEarn');
+
+  try {
+    // Force import the existing proxy to the upgrades plugin
+    await upgrades.forceImport(MOVIN_EARN_PROXY_ADDRESS, MOVINEarnV1, {
+      kind: 'uups',
+    });
+    console.log('✅ Existing proxy imported successfully');
+  } catch (error: any) {
+    console.log('⚠️ Proxy might already be imported or error during import:', error.message);
+  }
+
   // Upgrade contract to V2
   console.log('Upgrading MOVINEarn contract to V2...');
   const MOVINEarnV2 = await ethers.getContractFactory('MOVINEarnV2');

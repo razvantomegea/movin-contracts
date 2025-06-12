@@ -8,7 +8,6 @@
     },
     {
       "address": "0x865E693ebd875eD997BeEc565CFfBbE687Ee5776",
-      "txHash": "0xabc94b96b86285e2bc974921b7aec7b985ca3927d82b080f733e0267dbc12cef",
       "kind": "uups"
     }
   ],
@@ -16752,137 +16751,137 @@
             "label": "movinToken",
             "offset": 0,
             "slot": "0",
-            "type": "t_contract(MovinToken)5738",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:33"
+            "type": "t_contract(MovinToken)14104",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:33"
           },
           {
             "label": "erc20MovinToken",
             "offset": 0,
             "slot": "1",
             "type": "t_contract(ERC20Upgradeable)1384",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:34"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:34"
           },
           {
             "label": "lockPeriodMultipliers",
             "offset": 0,
             "slot": "2",
             "type": "t_mapping(t_uint256,t_uint256)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:118"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:118"
           },
           {
             "label": "userStakes",
             "offset": 0,
             "slot": "3",
-            "type": "t_mapping(t_address,t_array(t_struct(Stake)2908_storage)dyn_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:119"
+            "type": "t_mapping(t_address,t_array(t_struct(Stake)8466_storage)dyn_storage)",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:119"
           },
           {
             "label": "userActivities",
             "offset": 0,
             "slot": "4",
-            "type": "t_mapping(t_address,t_struct(UserActivity)2934_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:120"
+            "type": "t_mapping(t_address,t_struct(UserActivity)8492_storage)",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:120"
           },
           {
             "label": "userStepsHistory",
             "offset": 0,
             "slot": "5",
-            "type": "t_mapping(t_address,t_array(t_struct(ActivityRecord)2939_storage)dyn_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:121"
+            "type": "t_mapping(t_address,t_array(t_struct(ActivityRecord)8497_storage)dyn_storage)",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:121"
           },
           {
             "label": "userMetsHistory",
             "offset": 0,
             "slot": "6",
-            "type": "t_mapping(t_address,t_array(t_struct(ActivityRecord)2939_storage)dyn_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:122"
+            "type": "t_mapping(t_address,t_array(t_struct(ActivityRecord)8497_storage)dyn_storage)",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:122"
           },
           {
             "label": "userSteps",
             "offset": 0,
             "slot": "7",
             "type": "t_mapping(t_address,t_uint256)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:123"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:123"
           },
           {
             "label": "userMets",
             "offset": 0,
             "slot": "8",
             "type": "t_mapping(t_address,t_uint256)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:124"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:124"
           },
           {
             "label": "userPremiumData",
             "offset": 0,
             "slot": "9",
-            "type": "t_mapping(t_address,t_struct(PremiumUserData)2953_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:125"
+            "type": "t_mapping(t_address,t_struct(PremiumUserData)8511_storage)",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:125"
           },
           {
             "label": "rewardHalvingTimestamp",
             "offset": 0,
             "slot": "10",
             "type": "t_uint256",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:131"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:131"
           },
           {
             "label": "baseStepsRate",
             "offset": 0,
             "slot": "11",
             "type": "t_uint256",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:132"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:132"
           },
           {
             "label": "baseMetsRate",
             "offset": 0,
             "slot": "12",
             "type": "t_uint256",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:133"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:133"
           },
           {
             "label": "migrator",
             "offset": 0,
             "slot": "13",
             "type": "t_address",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:148"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:148"
           },
           {
             "label": "userReferrals",
             "offset": 0,
             "slot": "14",
-            "type": "t_mapping(t_address,t_struct(ReferralInfo)2946_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:150"
+            "type": "t_mapping(t_address,t_struct(ReferralInfo)8504_storage)",
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:150"
           },
           {
             "label": "referrals",
             "offset": 0,
             "slot": "15",
             "type": "t_mapping(t_address,t_array(t_address)dyn_storage)",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:151"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:151"
           },
           {
             "label": "__gap",
             "offset": 0,
             "slot": "16",
             "type": "t_array(t_uint256)48_storage",
-            "contract": "MOVINEarnV2",
-            "src": "contracts/MOVINEarnV2.sol:154"
+            "contract": "MOVINEarn",
+            "src": "contracts/MOVINEarn.sol:154"
           }
         ],
         "types": {
@@ -16972,12 +16971,12 @@
             "label": "address[]",
             "numberOfBytes": "32"
           },
-          "t_array(t_struct(ActivityRecord)2939_storage)dyn_storage": {
-            "label": "struct MOVINEarnV2.ActivityRecord[]",
+          "t_array(t_struct(ActivityRecord)8497_storage)dyn_storage": {
+            "label": "struct MOVINEarn.ActivityRecord[]",
             "numberOfBytes": "32"
           },
-          "t_array(t_struct(Stake)2908_storage)dyn_storage": {
-            "label": "struct MOVINEarnV2.Stake[]",
+          "t_array(t_struct(Stake)8466_storage)dyn_storage": {
+            "label": "struct MOVINEarn.Stake[]",
             "numberOfBytes": "32"
           },
           "t_array(t_uint256)48_storage": {
@@ -16988,7 +16987,7 @@
             "label": "contract ERC20Upgradeable",
             "numberOfBytes": "20"
           },
-          "t_contract(MovinToken)5738": {
+          "t_contract(MovinToken)14104": {
             "label": "contract MovinToken",
             "numberOfBytes": "20"
           },
@@ -16996,23 +16995,570 @@
             "label": "mapping(address => address[])",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_address,t_array(t_struct(ActivityRecord)2939_storage)dyn_storage)": {
+          "t_mapping(t_address,t_array(t_struct(ActivityRecord)8497_storage)dyn_storage)": {
+            "label": "mapping(address => struct MOVINEarn.ActivityRecord[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_array(t_struct(Stake)8466_storage)dyn_storage)": {
+            "label": "mapping(address => struct MOVINEarn.Stake[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(PremiumUserData)8511_storage)": {
+            "label": "mapping(address => struct MOVINEarn.PremiumUserData)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(ReferralInfo)8504_storage)": {
+            "label": "mapping(address => struct MOVINEarn.ReferralInfo)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(UserActivity)8492_storage)": {
+            "label": "mapping(address => struct MOVINEarn.UserActivity)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_uint256)": {
+            "label": "mapping(uint256 => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(ActivityRecord)8497_storage": {
+            "label": "struct MOVINEarn.ActivityRecord",
+            "members": [
+              {
+                "label": "value",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "timestamp",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(PremiumUserData)8511_storage": {
+            "label": "struct MOVINEarn.PremiumUserData",
+            "members": [
+              {
+                "label": "status",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "paid",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "expiration",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(ReferralInfo)8504_storage": {
+            "label": "struct MOVINEarn.ReferralInfo",
+            "members": [
+              {
+                "label": "referrer",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "earnedBonus",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "referralCount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(Stake)8466_storage": {
+            "label": "struct MOVINEarn.Stake",
+            "members": [
+              {
+                "label": "amount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "startTime",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "lockDuration",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "lastClaimed",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              }
+            ],
+            "numberOfBytes": "128"
+          },
+          "t_struct(UserActivity)8492_storage": {
+            "label": "struct MOVINEarn.UserActivity",
+            "members": [
+              {
+                "label": "dailySteps",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "dailyMets",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "pendingStepsRewards",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "pendingMetsRewards",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "lastRewardAccumulationTime",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "isPremium",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "lastUpdated",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "6"
+              }
+            ],
+            "numberOfBytes": "224"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Pausable": [
+            {
+              "contract": "PausableUpgradeable",
+              "label": "_paused",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol:21",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable2Step": [
+            {
+              "contract": "Ownable2StepUpgradeable",
+              "label": "_pendingOwner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol:29",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      },
+      "allAddresses": [
+        "0x61fE4A74b6e6d057a82EF9C7ccD5048E5d9568C8",
+        "0x159F12b7E515Ac0b394c0Ff46E675a68759635bC"
+      ]
+    },
+    "6b0bb96c2e1433fea8b941b02555678f43823c44f1578c72edccfb7dee273495": {
+      "address": "0x3F97030eC9Bb8Ec1d523734781B404338B824d53",
+      "txHash": "0x55e16cdb8c194422a7df8f4707f130db105ef05127cbdc74939b0c2cf37cccbb",
+      "layout": {
+        "solcVersion": "0.8.29",
+        "storage": [
+          {
+            "label": "movinToken",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(MovinToken)11564",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:39"
+          },
+          {
+            "label": "erc20MovinToken",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_contract(ERC20Upgradeable)1384",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:40"
+          },
+          {
+            "label": "lockPeriodMultipliers",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_mapping(t_uint256,t_uint256)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:126"
+          },
+          {
+            "label": "userStakes",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_array(t_struct(Stake)8476_storage)dyn_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:127"
+          },
+          {
+            "label": "userActivities",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_address,t_struct(UserActivity)8502_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:128"
+          },
+          {
+            "label": "userStepsHistory",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_mapping(t_address,t_array(t_struct(ActivityRecord)8507_storage)dyn_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:129"
+          },
+          {
+            "label": "userMetsHistory",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_array(t_struct(ActivityRecord)8507_storage)dyn_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:130"
+          },
+          {
+            "label": "userSteps",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:131"
+          },
+          {
+            "label": "userMets",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:132"
+          },
+          {
+            "label": "userPremiumData",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_mapping(t_address,t_struct(PremiumUserData)8521_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:133"
+          },
+          {
+            "label": "rewardHalvingTimestamp",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_uint256",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:139"
+          },
+          {
+            "label": "baseStepsRate",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:140"
+          },
+          {
+            "label": "baseMetsRate",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_uint256",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:141"
+          },
+          {
+            "label": "migrator",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_address",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:156"
+          },
+          {
+            "label": "userReferrals",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_mapping(t_address,t_struct(ReferralInfo)8514_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:158"
+          },
+          {
+            "label": "referrals",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_mapping(t_address,t_array(t_address)dyn_storage)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:159"
+          },
+          {
+            "label": "nonces",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:162"
+          },
+          {
+            "label": "signatureRequired",
+            "offset": 0,
+            "slot": "17",
+            "type": "t_bool",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:167"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "18",
+            "type": "t_array(t_uint256)45_storage",
+            "contract": "MOVINEarnV2",
+            "src": "contracts/MOVINEarnV2.sol:170"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EIP712Storage)744_storage": {
+            "label": "struct EIP712Upgradeable.EIP712Storage",
+            "members": [
+              {
+                "label": "_hashedName",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_hashedVersion",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "_name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "_version",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "3"
+              }
+            ],
+            "numberOfBytes": "128"
+          },
+          "t_struct(InitializableStorage)146_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(Ownable2StepStorage)14_storage": {
+            "label": "struct Ownable2StepUpgradeable.Ownable2StepStorage",
+            "members": [
+              {
+                "label": "_pendingOwner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)74_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PausableStorage)598_storage": {
+            "label": "struct PausableUpgradeable.PausableStorage",
+            "members": [
+              {
+                "label": "_paused",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)675_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_struct(ActivityRecord)8507_storage)dyn_storage": {
+            "label": "struct MOVINEarnV2.ActivityRecord[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_struct(Stake)8476_storage)dyn_storage": {
+            "label": "struct MOVINEarnV2.Stake[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)45_storage": {
+            "label": "uint256[45]",
+            "numberOfBytes": "1440"
+          },
+          "t_contract(ERC20Upgradeable)1384": {
+            "label": "contract ERC20Upgradeable",
+            "numberOfBytes": "20"
+          },
+          "t_contract(MovinToken)11564": {
+            "label": "contract MovinToken",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_array(t_address)dyn_storage)": {
+            "label": "mapping(address => address[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_array(t_struct(ActivityRecord)8507_storage)dyn_storage)": {
             "label": "mapping(address => struct MOVINEarnV2.ActivityRecord[])",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_address,t_array(t_struct(Stake)2908_storage)dyn_storage)": {
+          "t_mapping(t_address,t_array(t_struct(Stake)8476_storage)dyn_storage)": {
             "label": "mapping(address => struct MOVINEarnV2.Stake[])",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_address,t_struct(PremiumUserData)2953_storage)": {
+          "t_mapping(t_address,t_struct(PremiumUserData)8521_storage)": {
             "label": "mapping(address => struct MOVINEarnV2.PremiumUserData)",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_address,t_struct(ReferralInfo)2946_storage)": {
+          "t_mapping(t_address,t_struct(ReferralInfo)8514_storage)": {
             "label": "mapping(address => struct MOVINEarnV2.ReferralInfo)",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_address,t_struct(UserActivity)2934_storage)": {
+          "t_mapping(t_address,t_struct(UserActivity)8502_storage)": {
             "label": "mapping(address => struct MOVINEarnV2.UserActivity)",
             "numberOfBytes": "32"
           },
@@ -17024,7 +17570,7 @@
             "label": "mapping(uint256 => uint256)",
             "numberOfBytes": "32"
           },
-          "t_struct(ActivityRecord)2939_storage": {
+          "t_struct(ActivityRecord)8507_storage": {
             "label": "struct MOVINEarnV2.ActivityRecord",
             "members": [
               {
@@ -17042,7 +17588,7 @@
             ],
             "numberOfBytes": "64"
           },
-          "t_struct(PremiumUserData)2953_storage": {
+          "t_struct(PremiumUserData)8521_storage": {
             "label": "struct MOVINEarnV2.PremiumUserData",
             "members": [
               {
@@ -17066,7 +17612,7 @@
             ],
             "numberOfBytes": "96"
           },
-          "t_struct(ReferralInfo)2946_storage": {
+          "t_struct(ReferralInfo)8514_storage": {
             "label": "struct MOVINEarnV2.ReferralInfo",
             "members": [
               {
@@ -17090,7 +17636,7 @@
             ],
             "numberOfBytes": "96"
           },
-          "t_struct(Stake)2908_storage": {
+          "t_struct(Stake)8476_storage": {
             "label": "struct MOVINEarnV2.Stake",
             "members": [
               {
@@ -17120,7 +17666,7 @@
             ],
             "numberOfBytes": "128"
           },
-          "t_struct(UserActivity)2934_storage": {
+          "t_struct(UserActivity)8502_storage": {
             "label": "struct MOVINEarnV2.UserActivity",
             "members": [
               {
@@ -17170,6 +17716,40 @@
           }
         },
         "namespaces": {
+          "erc7201:openzeppelin.storage.EIP712": [
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_hashedName",
+              "type": "t_bytes32",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:39",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_hashedVersion",
+              "type": "t_bytes32",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:41",
+              "offset": 0,
+              "slot": "1"
+            },
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_name",
+              "type": "t_string_storage",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:43",
+              "offset": 0,
+              "slot": "2"
+            },
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_version",
+              "type": "t_string_storage",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:44",
+              "offset": 0,
+              "slot": "3"
+            }
+          ],
           "erc7201:openzeppelin.storage.Pausable": [
             {
               "contract": "PausableUpgradeable",
