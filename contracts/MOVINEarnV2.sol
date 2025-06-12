@@ -7,6 +7,8 @@ import '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol';
+import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
 
 import './MovinToken.sol';
 
@@ -24,11 +26,15 @@ error ContractPaused();
 error AlreadyReferred();
 error InvalidReferrer();
 error InvalidPremiumAmount();
+error InvalidSignature();
+error InvalidNonce();
+error SignatureExpired();
 contract MOVINEarnV2 is
   UUPSUpgradeable,
   Ownable2StepUpgradeable,
   ReentrancyGuardUpgradeable,
-  PausableUpgradeable
+  PausableUpgradeable,
+  EIP712Upgradeable
 {
   MovinToken public movinToken;
   ERC20Upgradeable public erc20MovinToken;
@@ -150,8 +156,13 @@ contract MOVINEarnV2 is
   mapping(address => ReferralInfo) public userReferrals;
   mapping(address => address[]) public referrals;
 
+  // V2: New variables for signature verification
+  mapping(address => uint256) public nonces;
+  bytes32 private constant FUNCTION_CALL_TYPEHASH =
+    keccak256('FunctionCall(address caller,bytes4 selector,uint256 nonce,uint256 deadline)');
+
   // Storage gap for future upgrades
-  uint256[48] private __gap; // Changed from 50 to 48 to account for new V2 variables
+  uint256[46] private __gap; // Changed from 48 to 46 to account for new signature verification variables
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -163,6 +174,7 @@ contract MOVINEarnV2 is
     __ReentrancyGuard_init();
     __UUPSUpgradeable_init();
     __Pausable_init();
+    __EIP712_init('MOVINEarnV2', '2');
 
     movinToken = MovinToken(_tokenAddress);
     erc20MovinToken = ERC20Upgradeable(_tokenAddress);
@@ -179,6 +191,7 @@ contract MOVINEarnV2 is
 
   // V2: Initialize function for upgrading to V2 (not used in actual upgrade since state is preserved)
   function initializeV2() public reinitializer(2) {
+    __EIP712_init('MOVINEarnV2', '2');
     // No changes to rewardHalvingTimestamp to preserve the existing halving schedule
     // Note: rewardHalvingTimestamp is intentionally preserved from V1 to maintain reward decrease cadence
   }
@@ -193,10 +206,39 @@ contract MOVINEarnV2 is
     _;
   }
 
+  // V2: Modifier for signature verification
+  modifier withOwnerSignature(
+    bytes4 selector,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  ) {
+    if (block.timestamp > deadline) revert SignatureExpired();
+    if (nonce != nonces[msg.sender]) revert InvalidNonce();
+
+    bytes32 digest = _hashTypedDataV4(
+      keccak256(abi.encode(FUNCTION_CALL_TYPEHASH, msg.sender, selector, nonce, deadline))
+    );
+
+    address signer = ECDSA.recover(digest, signature);
+    if (signer != owner()) revert InvalidSignature();
+
+    nonces[msg.sender]++;
+    _;
+  }
+
   function stakeTokens(
     uint256 amount,
-    uint256 lockMonths
-  ) external nonReentrant whenNotPausedWithRevert {
+    uint256 lockMonths,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    nonReentrant
+    whenNotPausedWithRevert
+    withOwnerSignature(this.stakeTokens.selector, nonce, deadline, signature)
+  {
     if (amount == 0) revert ZeroAmountNotAllowed();
     if (lockPeriodMultipliers[lockMonths] == 0) revert InvalidLockPeriod(lockMonths);
     if (lockMonths == 24 && !userPremiumData[msg.sender].status) revert UnauthorizedAccess();
@@ -216,7 +258,17 @@ contract MOVINEarnV2 is
     emit Staked(msg.sender, amount, lockPeriod, userStakes[msg.sender].length - 1);
   }
 
-  function claimStakingRewards(uint256 stakeIndex) external nonReentrant whenNotPausedWithRevert {
+  function claimStakingRewards(
+    uint256 stakeIndex,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    nonReentrant
+    whenNotPausedWithRevert
+    withOwnerSignature(this.claimStakingRewards.selector, nonce, deadline, signature)
+  {
     uint256 stakeCount = userStakes[msg.sender].length;
 
     if (stakeIndex >= stakeCount) {
@@ -244,7 +296,16 @@ contract MOVINEarnV2 is
     emit StakingRewardsClaimed(msg.sender, stakeIndex, reward);
   }
 
-  function claimAllStakingRewards() external nonReentrant whenNotPausedWithRevert {
+  function claimAllStakingRewards(
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    nonReentrant
+    whenNotPausedWithRevert
+    withOwnerSignature(this.claimAllStakingRewards.selector, nonce, deadline, signature)
+  {
     uint256 stakeCount = userStakes[msg.sender].length;
     if (stakeCount == 0) revert NoRewardsAvailable();
 
@@ -280,7 +341,17 @@ contract MOVINEarnV2 is
     emit AllStakingRewardsClaimed(msg.sender, totalReward, stakeCount);
   }
 
-  function unstake(uint256 stakeIndex) external nonReentrant whenNotPausedWithRevert {
+  function unstake(
+    uint256 stakeIndex,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    nonReentrant
+    whenNotPausedWithRevert
+    withOwnerSignature(this.unstake.selector, nonce, deadline, signature)
+  {
     uint256 stakeCount = userStakes[msg.sender].length;
 
     if (stakeIndex >= stakeCount) revert InvalidStakeIndex(stakeIndex, stakeCount - 1);
@@ -305,8 +376,16 @@ contract MOVINEarnV2 is
   // New function for restaking without burning fees
   function restake(
     uint256 stakeIndex,
-    uint256 lockMonths
-  ) external nonReentrant whenNotPausedWithRevert {
+    uint256 lockMonths,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    nonReentrant
+    whenNotPausedWithRevert
+    withOwnerSignature(this.restake.selector, nonce, deadline, signature)
+  {
     uint256 stakeCount = userStakes[msg.sender].length;
 
     if (stakeIndex >= stakeCount) revert InvalidStakeIndex(stakeIndex, stakeCount - 1);
@@ -457,8 +536,15 @@ contract MOVINEarnV2 is
   function recordActivity(
     address user,
     uint256 newSteps,
-    uint256 newMets
-  ) external whenNotPausedWithRevert {
+    uint256 newMets,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    whenNotPausedWithRevert
+    withOwnerSignature(this.recordActivity.selector, nonce, deadline, signature)
+  {
     // Skip validation completely if both inputs are zero
     // This allows referral registration to work properly
     if (newSteps <= 0 && newMets <= 0) {
@@ -596,7 +682,16 @@ contract MOVINEarnV2 is
     return (newStepsRate, newMetsRate);
   }
 
-  function registerReferral(address referrer) external whenNotPausedWithRevert {
+  function registerReferral(
+    address referrer,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    whenNotPausedWithRevert
+    withOwnerSignature(this.registerReferral.selector, nonce, deadline, signature)
+  {
     if (referrer == address(0) || referrer == msg.sender) {
       revert InvalidReferrer();
     }
@@ -667,7 +762,18 @@ contract MOVINEarnV2 is
   }
 
   // Payable function to receive ERC20 tokens
-  function deposit(uint256 amount) public payable whenNotPausedWithRevert nonReentrant {
+  function deposit(
+    uint256 amount,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    public
+    payable
+    whenNotPausedWithRevert
+    nonReentrant
+    withOwnerSignature(this.deposit.selector, nonce, deadline, signature)
+  {
     // Check if the amount is greater than zero
     if (amount == 0) {
       revert ZeroAmountNotAllowed();
@@ -691,7 +797,17 @@ contract MOVINEarnV2 is
     _;
   }
 
-  function setPremiumStatus(bool status, uint256 amount) external whenNotPausedWithRevert {
+  function setPremiumStatus(
+    bool status,
+    uint256 amount,
+    uint256 nonce,
+    uint256 deadline,
+    bytes calldata signature
+  )
+    external
+    whenNotPausedWithRevert
+    withOwnerSignature(this.setPremiumStatus.selector, nonce, deadline, signature)
+  {
     if (status) {
       uint256 expirationTime;
 
@@ -797,5 +913,10 @@ contract MOVINEarnV2 is
     } else {
       revert InsufficientBalance(contractBalance, amount);
     }
+  }
+
+  // V2: Function to get current nonce for a user
+  function getNonce(address user) external view returns (uint256) {
+    return nonces[user];
   }
 }

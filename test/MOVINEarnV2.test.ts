@@ -4,6 +4,167 @@ import { MOVINEarnV2, MovinToken } from '../typechain-types';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 
+// Utility functions for signature generation
+async function generateSignature(
+  signer: HardhatEthersSigner,
+  contractAddress: string,
+  caller: string,
+  selector: string,
+  nonce: number,
+  deadline: number,
+  chainId: number = 31337
+) {
+  const domain = {
+    name: 'MOVINEarnV2',
+    version: '2',
+    chainId: chainId,
+    verifyingContract: contractAddress,
+  };
+
+  const types = {
+    FunctionCall: [
+      { name: 'caller', type: 'address' },
+      { name: 'selector', type: 'bytes4' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+  };
+
+  const message = {
+    caller: caller,
+    selector: selector,
+    nonce: nonce,
+    deadline: deadline,
+  };
+
+  return await signer.signTypedData(domain, types, message);
+}
+
+// Helper function to get function selector
+function getFunctionSelector(functionSignature: string): string {
+  return ethers.keccak256(ethers.toUtf8Bytes(functionSignature)).slice(0, 10);
+}
+
+// Helper class for handling signature-verified function calls
+class SignatureHelper {
+  constructor(
+    private contract: MOVINEarnV2,
+    private owner: HardhatEthersSigner,
+    private chainId: number = 31337
+  ) {}
+
+  async callWithSignature(
+    user: HardhatEthersSigner,
+    functionName: string,
+    functionSignature: string,
+    args: any[]
+  ) {
+    const contractAddress = await this.contract.getAddress();
+    const nonce = await this.contract.getNonce(user.address);
+    const currentBlockTime = await time.latest();
+    const deadline = currentBlockTime + 86400; // 24 hours from now (blockchain time)
+    const selector = getFunctionSelector(functionSignature);
+
+    const signature = await generateSignature(
+      this.owner,
+      contractAddress,
+      user.address,
+      selector,
+      Number(nonce),
+      deadline,
+      this.chainId
+    );
+
+    // Call the function with the required signature parameters
+    return await (this.contract.connect(user) as any)[functionName](
+      ...args,
+      nonce,
+      deadline,
+      signature
+    );
+  }
+
+  async stakeTokens(user: HardhatEthersSigner, amount: bigint, lockMonths: number) {
+    return this.callWithSignature(
+      user,
+      'stakeTokens',
+      'stakeTokens(uint256,uint256,uint256,uint256,bytes)',
+      [amount, lockMonths]
+    );
+  }
+
+  async claimStakingRewards(user: HardhatEthersSigner, stakeIndex: number) {
+    return this.callWithSignature(
+      user,
+      'claimStakingRewards',
+      'claimStakingRewards(uint256,uint256,uint256,bytes)',
+      [stakeIndex]
+    );
+  }
+
+  async claimAllStakingRewards(user: HardhatEthersSigner) {
+    return this.callWithSignature(
+      user,
+      'claimAllStakingRewards',
+      'claimAllStakingRewards(uint256,uint256,bytes)',
+      []
+    );
+  }
+
+  async unstake(user: HardhatEthersSigner, stakeIndex: number) {
+    return this.callWithSignature(user, 'unstake', 'unstake(uint256,uint256,uint256,bytes)', [
+      stakeIndex,
+    ]);
+  }
+
+  async restake(user: HardhatEthersSigner, stakeIndex: number, lockMonths: number) {
+    return this.callWithSignature(
+      user,
+      'restake',
+      'restake(uint256,uint256,uint256,uint256,bytes)',
+      [stakeIndex, lockMonths]
+    );
+  }
+
+  async recordActivity(
+    user: HardhatEthersSigner,
+    userAddress: string,
+    newSteps: number,
+    newMets: number
+  ) {
+    return this.callWithSignature(
+      user,
+      'recordActivity',
+      'recordActivity(address,uint256,uint256,uint256,uint256,bytes)',
+      [userAddress, newSteps, newMets]
+    );
+  }
+
+  async registerReferral(user: HardhatEthersSigner, referrer: string) {
+    return this.callWithSignature(
+      user,
+      'registerReferral',
+      'registerReferral(address,uint256,uint256,bytes)',
+      [referrer]
+    );
+  }
+
+  async setPremiumStatus(user: HardhatEthersSigner, status: boolean, amount: bigint) {
+    return this.callWithSignature(
+      user,
+      'setPremiumStatus',
+      'setPremiumStatus(bool,uint256,uint256,uint256,bytes)',
+      [status, amount]
+    );
+  }
+
+  async deposit(user: HardhatEthersSigner, amount: bigint) {
+    return this.callWithSignature(user, 'deposit', 'deposit(uint256,uint256,uint256,bytes)', [
+      amount,
+    ]);
+  }
+}
+
 describe('MOVINEarnV2', function () {
   let movinToken: MovinToken;
   let movinEarn: MOVINEarnV2;
@@ -11,6 +172,7 @@ describe('MOVINEarnV2', function () {
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
   let migrator: HardhatEthersSigner;
+  let signatureHelper: SignatureHelper;
 
   // Constants
   const STEPS_THRESHOLD = 10_000;
@@ -60,6 +222,8 @@ describe('MOVINEarnV2', function () {
 
     await movinToken.connect(user1).approve(movinEarnAddress, ONE_HUNDRED_THOUSAND_TOKENS);
     await movinToken.connect(user2).approve(movinEarnAddress, ONE_HUNDRED_THOUSAND_TOKENS);
+
+    signatureHelper = new SignatureHelper(movinEarn, owner);
   });
 
   describe('Initialization', function () {
@@ -90,7 +254,7 @@ describe('MOVINEarnV2', function () {
       const stakeAmount = ethers.parseEther('100');
 
       // Set user1 as premium to allow staking for 24 months
-      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user1, true, ethers.parseEther('1000'));
 
       // Test each valid lock period
       const lockPeriods = [1, 3, 6, 12, 24];
@@ -102,7 +266,7 @@ describe('MOVINEarnV2', function () {
         await movinToken.connect(user1).approve(await movinEarn.getAddress(), stakeAmount);
 
         // Stake tokens
-        await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+        await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
         // Verify stake was created
         const userStake = await movinEarn.connect(user1).getUserStake(i);
@@ -119,12 +283,12 @@ describe('MOVINEarnV2', function () {
 
       // Try to stake with invalid lock period
       await expect(
-        movinEarn.connect(user1).stakeTokens(stakeAmount, 2)
+        signatureHelper.stakeTokens(user1, stakeAmount, 2)
       ).to.be.revertedWithCustomError(movinEarn, 'InvalidLockPeriod');
     });
 
     it('Should fail when staking zero amount', async function () {
-      await expect(movinEarn.connect(user1).stakeTokens(0, 1)).to.be.revertedWithCustomError(
+      await expect(signatureHelper.stakeTokens(user1, 0n, 1)).to.be.revertedWithCustomError(
         movinEarn,
         'ZeroAmountNotAllowed'
       );
@@ -134,23 +298,23 @@ describe('MOVINEarnV2', function () {
       const stakeAmount = ethers.parseEther('100');
 
       // Set user1 as premium and user2 as non-premium
-      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
-      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+      await signatureHelper.setPremiumStatus(user1, true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user2, false, 0n);
 
       // Approve tokens for both users
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), stakeAmount);
       await movinToken.connect(user2).approve(await movinEarn.getAddress(), stakeAmount);
 
       // Premium user should be able to stake for 24 months
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, 24);
+      await signatureHelper.stakeTokens(user1, stakeAmount, 24);
 
       // Non-premium user should not be able to stake for 24 months
       await expect(
-        movinEarn.connect(user2).stakeTokens(stakeAmount, 24)
+        signatureHelper.stakeTokens(user2, stakeAmount, 24)
       ).to.be.revertedWithCustomError(movinEarn, 'UnauthorizedAccess');
 
       // Non-premium user should still be able to stake for other periods
-      await movinEarn.connect(user2).stakeTokens(stakeAmount, 12);
+      await signatureHelper.stakeTokens(user2, stakeAmount, 12);
     });
 
     it('Should calculate staking rewards correctly', async function () {
@@ -158,7 +322,7 @@ describe('MOVINEarnV2', function () {
       const lockPeriod = 12; // 12 months, which has a multiplier of 12
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       // Advance time by 12 hours (less than 1 day expiration)
       await time.increase(12 * 60 * 60);
@@ -186,10 +350,10 @@ describe('MOVINEarnV2', function () {
       const lockPeriod = 12; // 12 months
 
       // Setup referral relationship
-      await movinEarn.connect(user2).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       // Advance time by 12 hours (less than 1 day expiration)
       await time.increase(12 * 60 * 60);
@@ -205,7 +369,7 @@ describe('MOVINEarnV2', function () {
       const expectedUserReward = reward;
 
       // Claim rewards
-      const tx = await movinEarn.connect(user1).claimStakingRewards(0);
+      const tx = await signatureHelper.claimStakingRewards(user1, 0);
       await tx.wait();
 
       // Verify balance increased for user1
@@ -240,9 +404,9 @@ describe('MOVINEarnV2', function () {
         .approve(await movinEarn.getAddress(), stake1Amount + stake2Amount + stake3Amount);
 
       // Create 3 different stakes
-      await movinEarn.connect(user1).stakeTokens(stake1Amount, 1); // 1 month
-      await movinEarn.connect(user1).stakeTokens(stake2Amount, 3); // 3 months
-      await movinEarn.connect(user1).stakeTokens(stake3Amount, 6); // 6 months
+      await signatureHelper.stakeTokens(user1, stake1Amount, 1); // 1 month
+      await signatureHelper.stakeTokens(user1, stake2Amount, 3); // 3 months
+      await signatureHelper.stakeTokens(user1, stake3Amount, 6); // 6 months
 
       // Advance time by 12 hours (less than 1 day expiration)
       await time.increase(12 * 60 * 60);
@@ -264,7 +428,7 @@ describe('MOVINEarnV2', function () {
       const contractBalanceBefore = await movinToken.balanceOf(movinEarnAddress);
 
       // Make sure rewards are claimed successfully
-      const tx = await movinEarn.connect(user1).claimAllStakingRewards();
+      const tx = await signatureHelper.claimAllStakingRewards(user1);
       await tx.wait();
 
       const contractBalanceAfter = await movinToken.balanceOf(movinEarnAddress);
@@ -303,7 +467,7 @@ describe('MOVINEarnV2', function () {
       const balanceBeforeStaking = await movinToken.balanceOf(user1.address);
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       const balanceAfterStaking = await movinToken.balanceOf(user1.address);
       expect(balanceAfterStaking).to.equal(balanceBeforeStaking - stakeAmount);
@@ -317,7 +481,7 @@ describe('MOVINEarnV2', function () {
       expect(stakeCount).to.equal(1);
 
       // Unstake
-      await movinEarn.connect(user1).unstake(0);
+      await signatureHelper.unstake(user1, 0);
 
       const stakeCountAfterUnstaking = await movinEarn.connect(user1).getUserStakeCount();
       expect(stakeCountAfterUnstaking).to.equal(0);
@@ -339,7 +503,7 @@ describe('MOVINEarnV2', function () {
       const newLockPeriod = 3; // 3 months for restaking
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, initialLockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, initialLockPeriod);
 
       // Verify initial stake
       const initialStakeCount = await movinEarn.connect(user1).getUserStakeCount();
@@ -352,7 +516,7 @@ describe('MOVINEarnV2', function () {
       await time.increase(32 * 24 * 60 * 60); // 32 days
 
       // Restake
-      await movinEarn.connect(user1).restake(0, newLockPeriod);
+      await signatureHelper.restake(user1, 0, newLockPeriod);
 
       // Verify stake count remains the same (one removed, one added)
       const stakeCountAfterRestaking = await movinEarn.connect(user1).getUserStakeCount();
@@ -369,13 +533,13 @@ describe('MOVINEarnV2', function () {
       const lockPeriod = 1; // 1 month
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       // Advance time but not enough to reach the end of lock period
       await time.increase(15 * 24 * 60 * 60); // 15 days
 
       // Attempt to restake should fail
-      await expect(movinEarn.connect(user1).restake(0, 3)).to.be.revertedWithCustomError(
+      await expect(signatureHelper.restake(user1, 0, 3)).to.be.revertedWithCustomError(
         movinEarn,
         'LockPeriodActive'
       );
@@ -386,14 +550,14 @@ describe('MOVINEarnV2', function () {
       const lockPeriod = 1; // 1 month
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       // Advance time beyond the lock period
       await time.increase(32 * 24 * 60 * 60); // 32 days
 
       // Attempt to restake with invalid lock period should fail
       await expect(
-        movinEarn.connect(user1).restake(0, 2) // 2 months is not a valid lock period
+        signatureHelper.restake(user1, 0, 2) // 2 months is not a valid lock period
       ).to.be.revertedWithCustomError(movinEarn, 'InvalidLockPeriod');
     });
 
@@ -403,10 +567,10 @@ describe('MOVINEarnV2', function () {
 
       // Create stakes for both users
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), stakeAmount);
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       await movinToken.connect(user2).approve(await movinEarn.getAddress(), stakeAmount);
-      await movinEarn.connect(user2).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user2, stakeAmount, lockPeriod);
 
       // Advance time beyond the lock period
       await time.increase(32 * 24 * 60 * 60); // 32 days
@@ -416,26 +580,26 @@ describe('MOVINEarnV2', function () {
       await movinToken
         .connect(user1)
         .approve(await movinEarn.getAddress(), ethers.parseEther('1000'));
-      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user1, true, ethers.parseEther('1000'));
 
       await movinToken.connect(user2).approve(await movinEarn.getAddress(), ethers.parseEther('0'));
-      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+      await signatureHelper.setPremiumStatus(user2, false, 0n);
 
       // Premium user should be able to restake for 24 months
-      await movinEarn.connect(user1).restake(0, 24);
+      await signatureHelper.restake(user1, 0, 24);
 
       // Verify the restake worked
       const user1Stake = await movinEarn.connect(user1).getUserStake(0);
       expect(user1Stake.lockDuration).to.equal(24 * 30 * 24 * 60 * 60);
 
       // Non-premium user should not be able to restake for 24 months
-      await expect(movinEarn.connect(user2).restake(0, 24)).to.be.revertedWithCustomError(
+      await expect(signatureHelper.restake(user2, 0, 24)).to.be.revertedWithCustomError(
         movinEarn,
         'UnauthorizedAccess'
       );
 
       // Non-premium user should still be able to restake for other periods
-      await movinEarn.connect(user2).restake(0, 12);
+      await signatureHelper.restake(user2, 0, 12);
 
       // Verify the restake worked
       const user2Stake = await movinEarn.connect(user2).getUserStake(0);
@@ -447,7 +611,7 @@ describe('MOVINEarnV2', function () {
       const lockPeriod = 12; // 12 months, which has a multiplier of 12
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       // Advance time by 30 hours (more than 1 day)
       await time.increase(30 * 60 * 60);
@@ -475,7 +639,7 @@ describe('MOVINEarnV2', function () {
       const lockPeriod = 12; // 12 months, which has a multiplier of 12
 
       // Stake tokens
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, lockPeriod);
+      await signatureHelper.stakeTokens(user1, stakeAmount, lockPeriod);
 
       // Advance time by 74 hours (more than 3 days)
       await time.increase(74 * 60 * 60);
@@ -500,7 +664,7 @@ describe('MOVINEarnV2', function () {
 
     it('Should allow claiming staking rewards before 1 day expiration', async function () {
       const stakeAmount = ethers.parseEther('1000');
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, 1); // 1 month lock
+      await signatureHelper.stakeTokens(user1, stakeAmount, 1); // 1 month lock
 
       // Advance time less than 1 day (e.g., 12 hours)
       await time.increase(12 * 60 * 60);
@@ -511,7 +675,7 @@ describe('MOVINEarnV2', function () {
 
       // Claim should succeed
       const balanceBefore = await movinToken.balanceOf(user1.address);
-      await expect(movinEarn.connect(user1).claimStakingRewards(0)).to.not.be.reverted;
+      await expect(signatureHelper.claimStakingRewards(user1, 0)).to.not.be.reverted;
       const balanceAfter = await movinToken.balanceOf(user1.address);
       const actualReward = balanceAfter - balanceBefore;
 
@@ -523,7 +687,7 @@ describe('MOVINEarnV2', function () {
 
     it('Should prevent claiming staking rewards after 1 day expiration', async function () {
       const stakeAmount = ethers.parseEther('1000');
-      await movinEarn.connect(user1).stakeTokens(stakeAmount, 1); // 1 month lock
+      await signatureHelper.stakeTokens(user1, stakeAmount, 1); // 1 month lock
 
       // Advance time more than 1 day (e.g., 1 day + 1 hour)
       await time.increase(ONE_DAY + 3600);
@@ -534,9 +698,10 @@ describe('MOVINEarnV2', function () {
       expect(reward).to.be.gt(0); // Reward should be > 0 (for the 1 hour)
 
       // Claim should succeed now since we modified the function
-      await expect(
-        movinEarn.connect(user1).claimStakingRewards(0)
-      ).to.not.be.revertedWithCustomError(movinEarn, 'NoRewardsAvailable');
+      await expect(signatureHelper.claimStakingRewards(user1, 0)).to.not.be.revertedWithCustomError(
+        movinEarn,
+        'NoRewardsAvailable'
+      );
     });
 
     it('claimAllStakingRewards should claim only non-expired rewards', async function () {
@@ -544,7 +709,7 @@ describe('MOVINEarnV2', function () {
       const stakeAmount2 = ethers.parseEther('1500');
 
       // Stake 1
-      await movinEarn.connect(user1).stakeTokens(stakeAmount1, 3); // 3 months
+      await signatureHelper.stakeTokens(user1, stakeAmount1, 3); // 3 months
       const stake1Timestamp = (await ethers.provider.getBlock('latest'))?.timestamp ?? 0;
 
       // Wait 12 hours
@@ -554,7 +719,7 @@ describe('MOVINEarnV2', function () {
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), stakeAmount2);
 
       // Stake 2
-      await movinEarn.connect(user1).stakeTokens(stakeAmount2, 6); // 6 months
+      await signatureHelper.stakeTokens(user1, stakeAmount2, 6); // 6 months
 
       // Wait another 13 hours (total time elapsed: 25 hours for stake 1, 13 hours for stake 2)
       await time.increase(13 * 60 * 60);
@@ -570,7 +735,7 @@ describe('MOVINEarnV2', function () {
 
       // Claim all rewards
       const balanceBefore = await movinToken.balanceOf(user1.address);
-      await expect(movinEarn.connect(user1).claimAllStakingRewards()).to.not.be.reverted;
+      await expect(signatureHelper.claimAllStakingRewards(user1)).to.not.be.reverted;
       const balanceAfter = await movinToken.balanceOf(user1.address);
       const actualTotalReward = balanceAfter - balanceBefore;
 
@@ -593,9 +758,9 @@ describe('MOVINEarnV2', function () {
       const stakeAmount1 = ONE_THOUSAND_TOKENS;
       const stakeAmount2 = ONE_THOUSAND_TOKENS;
 
-      await movinEarn.connect(user1).stakeTokens(stakeAmount1, 3); // 3 months
+      await signatureHelper.stakeTokens(user1, stakeAmount1, 3); // 3 months
       await movinToken.connect(user1).approve(await movinEarn.getAddress(), stakeAmount2);
-      await movinEarn.connect(user1).stakeTokens(stakeAmount2, 6); // 6 months
+      await signatureHelper.stakeTokens(user1, stakeAmount2, 6); // 6 months
 
       // Advance time by 24 hours and 1 second (very small modulo)
       await time.increase(ONE_DAY + 1);
@@ -607,7 +772,7 @@ describe('MOVINEarnV2', function () {
 
       // Since we claim with a minimum threshold of 0.001 ether
       // and 1 second of rewards is very small, claim should still revert
-      await expect(movinEarn.connect(user1).claimAllStakingRewards()).to.be.revertedWithCustomError(
+      await expect(signatureHelper.claimAllStakingRewards(user1)).to.be.revertedWithCustomError(
         movinEarn,
         'NoRewardsAvailable'
       );
@@ -617,7 +782,7 @@ describe('MOVINEarnV2', function () {
   describe('Activity recording and rewards', function () {
     beforeEach(async function () {
       // Set user1 as premium
-      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user1, true, ethers.parseEther('1000'));
     });
 
     it('Should correctly record steps activity and distribute rewards', async function () {
@@ -625,7 +790,7 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user1.address);
 
       // Record exactly the premium threshold steps (5,000) for premium user
-      await movinEarn.recordActivity(user1.address, PREMIUM_STEPS_THRESHOLD, 0);
+      await signatureHelper.recordActivity(user1, user1.address, PREMIUM_STEPS_THRESHOLD, 0);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
@@ -645,7 +810,7 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user1.address);
 
       // Record exactly the premium threshold METs (5)
-      await movinEarn.recordActivity(user1.address, 0, PREMIUM_METS_THRESHOLD);
+      await signatureHelper.recordActivity(user1, user1.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
@@ -665,10 +830,10 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user2.address);
 
       // Ensure user2 is not premium
-      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+      await signatureHelper.setPremiumStatus(user2, false, 0n);
 
       // Record exactly the regular threshold steps (10,000) for non-premium user
-      await movinEarn.recordActivity(user2.address, STEPS_THRESHOLD, 0);
+      await signatureHelper.recordActivity(user2, user2.address, STEPS_THRESHOLD, 0);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user2.address);
@@ -688,10 +853,10 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user2.address);
 
       // Ensure user2 is not premium
-      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+      await signatureHelper.setPremiumStatus(user2, false, 0n);
 
       // Record exactly the premium threshold METs (5)
-      await movinEarn.recordActivity(user2.address, 0, PREMIUM_METS_THRESHOLD);
+      await signatureHelper.recordActivity(user2, user2.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user2.address);
@@ -710,7 +875,8 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user1.address);
 
       // Record both steps and METs at premium threshold
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user1,
         user1.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -732,7 +898,12 @@ describe('MOVINEarnV2', function () {
       const aboveThresholdSteps = PREMIUM_STEPS_THRESHOLD + 5000; // 2 for steps (10000/5000)
       const aboveThresholdMETs = PREMIUM_METS_THRESHOLD + 10; // 3 for METs (15/5)
 
-      await movinEarn.recordActivity(user1.address, aboveThresholdSteps, aboveThresholdMETs);
+      await signatureHelper.recordActivity(
+        user1,
+        user1.address,
+        aboveThresholdSteps,
+        aboveThresholdMETs
+      );
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
@@ -747,13 +918,13 @@ describe('MOVINEarnV2', function () {
     });
 
     it('Should reject activity that exceeds rate limits', async function () {
-      await movinEarn.recordActivity(user1.address, 1000, 0);
+      await signatureHelper.recordActivity(user1, user1.address, 1000, 0);
       // Calculate steps that exceed the rate limit
       const tooManySteps = MAX_STEPS_PER_MINUTE + 100;
 
       // Try to record too many steps too quickly
       await expect(
-        movinEarn.recordActivity(user1.address, tooManySteps, 0)
+        signatureHelper.recordActivity(user1, user1.address, tooManySteps, 0)
       ).to.be.revertedWithCustomError(movinEarn, 'InvalidActivityInput');
 
       // Calculate METs that exceed the rate limit
@@ -761,13 +932,13 @@ describe('MOVINEarnV2', function () {
 
       // Try to record too many METs too quickly
       await expect(
-        movinEarn.recordActivity(user1.address, 0, tooManyMETs)
+        signatureHelper.recordActivity(user1, user1.address, 0, tooManyMETs)
       ).to.be.revertedWithCustomError(movinEarn, 'InvalidActivityInput');
     });
 
     it('Should reject multiple activity recordings within 1 minute', async function () {
       // First activity recording should succeed
-      await movinEarn.recordActivity(user1.address, 100, 1);
+      await signatureHelper.recordActivity(user1, user1.address, 100, 1);
 
       const activity = await movinEarn.getTodayUserActivity(user1.address);
       expect(activity.dailySteps).to.equal(100);
@@ -775,15 +946,14 @@ describe('MOVINEarnV2', function () {
       expect(activity.lastUpdated).to.not.equal(0);
 
       // Second activity recording within 1 minute should fail
-      await expect(movinEarn.recordActivity(user1.address, 100, 1)).to.be.revertedWithCustomError(
-        movinEarn,
-        'InvalidActivityInput'
-      );
+      await expect(
+        signatureHelper.recordActivity(user1, user1.address, 100, 1)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidActivityInput');
 
       await time.increase(61); // 1 minute and 1 second
 
       // Now activity recording should succeed
-      await movinEarn.recordActivity(user1.address, 100, 1);
+      await signatureHelper.recordActivity(user1, user1.address, 100, 1);
     });
 
     it('Should accept activity above maximum daily limits but not reward it', async function () {
@@ -795,7 +965,7 @@ describe('MOVINEarnV2', function () {
       const initialBalance = await movinToken.balanceOf(user1.address);
 
       // Record activity above maximum daily limits
-      await movinEarn.recordActivity(user1.address, MAX_DAILY_STEPS + 1000, 0);
+      await signatureHelper.recordActivity(user1, user1.address, MAX_DAILY_STEPS + 1000, 0);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user1.address);
@@ -815,7 +985,7 @@ describe('MOVINEarnV2', function () {
       const initialBalanceMets = await movinToken.balanceOf(user1.address);
 
       // Record METs activity above maximum
-      await movinEarn.recordActivity(user1.address, 0, MAX_DAILY_METS + 10);
+      await signatureHelper.recordActivity(user1, user1.address, 0, MAX_DAILY_METS + 10);
 
       // Get balance after activity
       const balanceAfterMets = await movinToken.balanceOf(user1.address);
@@ -831,7 +1001,8 @@ describe('MOVINEarnV2', function () {
 
     it('Should reset activity at midnight', async function () {
       // Record activity (premium user gets lower thresholds)
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user1,
         user1.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -855,7 +1026,8 @@ describe('MOVINEarnV2', function () {
       expect(activity.dailyMets).to.equal(0);
 
       // Record new activity for the new day
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user1,
         user1.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -878,7 +1050,8 @@ describe('MOVINEarnV2', function () {
       await time.increase(ONE_DAY);
 
       // Record activity to trigger rate decrease (premium user)
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user1,
         user1.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -898,7 +1071,7 @@ describe('MOVINEarnV2', function () {
 
     it('Should correctly distribute referral bonuses', async function () {
       // Set up referral relationship
-      await movinEarn.connect(user2).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
 
       // Get initial balances
       const referrerInitialBalance = await movinToken.balanceOf(user1.address);
@@ -908,10 +1081,11 @@ describe('MOVINEarnV2', function () {
       await movinToken
         .connect(user2)
         .approve(await movinEarn.getAddress(), ethers.parseEther('1000'));
-      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user2, true, ethers.parseEther('1000'));
 
       // Record activity for referee (user2) - using premium thresholds
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user2,
         user2.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -944,7 +1118,12 @@ describe('MOVINEarnV2', function () {
       const belowThresholdMETs = PREMIUM_METS_THRESHOLD - 2;
       const initialBalance = await movinToken.balanceOf(user1.address);
 
-      await movinEarn.recordActivity(user1.address, belowThresholdSteps, belowThresholdMETs);
+      await signatureHelper.recordActivity(
+        user1,
+        user1.address,
+        belowThresholdSteps,
+        belowThresholdMETs
+      );
 
       // Verify activity was recorded but no rewards yet
       const activity = await movinEarn.getTodayUserActivity(user1.address);
@@ -954,7 +1133,7 @@ describe('MOVINEarnV2', function () {
       await time.increase(60 * 5); // 5 minutes
 
       // Record more activity to reach premium thresholds
-      await movinEarn.recordActivity(user1.address, 1000, 2);
+      await signatureHelper.recordActivity(user1, user1.address, 1000, 2);
 
       // Get balance after reaching thresholds
       const finalBalance = await movinToken.balanceOf(user1.address);
@@ -968,7 +1147,7 @@ describe('MOVINEarnV2', function () {
 
     it('Should handle zero inputs correctly', async function () {
       // Record activity with zero inputs
-      await movinEarn.recordActivity(user1.address, 0, 0);
+      await signatureHelper.recordActivity(user1, user1.address, 0, 0);
 
       // Verify no activity was recorded
       const activity = await movinEarn.getTodayUserActivity(user1.address);
@@ -976,7 +1155,8 @@ describe('MOVINEarnV2', function () {
       expect(activity.dailyMets).to.equal(0);
 
       // Then record valid activity (premium user)
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user1,
         user1.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -994,14 +1174,20 @@ describe('MOVINEarnV2', function () {
 
       // Try to record activity
       await expect(
-        movinEarn.recordActivity(user1.address, PREMIUM_STEPS_THRESHOLD, PREMIUM_METS_THRESHOLD)
+        signatureHelper.recordActivity(
+          user1,
+          user1.address,
+          PREMIUM_STEPS_THRESHOLD,
+          PREMIUM_METS_THRESHOLD
+        )
       ).to.be.revertedWithCustomError(movinEarn, 'ContractPaused');
 
       // Unpause the contract
       await movinEarn.connect(owner).emergencyUnpause();
 
       // Now activity recording should work (premium user)
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user1,
         user1.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -1010,7 +1196,7 @@ describe('MOVINEarnV2', function () {
 
     it('Should calculate rewards correctly', async function () {
       // Set up premium status
-      await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user1, true, ethers.parseEther('1000'));
 
       // Test calculating rewards directly (premium user with lower thresholds)
       const [stepsReward, metsReward, totalSteps, totalMets] =
@@ -1034,7 +1220,7 @@ describe('MOVINEarnV2', function () {
       const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
       const refereeBalanceBefore = await movinToken.balanceOf(user2.address);
 
-      await expect(movinEarn.connect(user2).registerReferral(user1.address))
+      await expect(signatureHelper.registerReferral(user2, user1.address))
         .to.emit(movinEarn, 'ReferralRegistered')
         .withArgs(user2.address, user1.address);
 
@@ -1063,19 +1249,19 @@ describe('MOVINEarnV2', function () {
 
     it('Should prevent self-referral', async function () {
       await expect(
-        movinEarn.connect(user1).registerReferral(user1.address)
+        signatureHelper.registerReferral(user1, user1.address)
       ).to.be.revertedWithCustomError(movinEarn, 'InvalidReferrer');
     });
 
     it('Should prevent registering a referral twice', async function () {
-      await movinEarn.connect(user2).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
       await expect(
-        movinEarn.connect(user2).registerReferral(user1.address)
+        signatureHelper.registerReferral(user2, user1.address)
       ).to.be.revertedWithCustomError(movinEarn, 'AlreadyReferred');
     });
 
     it('Should track referrals correctly', async function () {
-      await movinEarn.connect(user2).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
 
       // Check user1's referrals
       const referrals = await movinEarn.getUserReferrals(user1.address);
@@ -1088,9 +1274,9 @@ describe('MOVINEarnV2', function () {
       const [owner, user1, user2, user3, user4] = await ethers.getSigners();
 
       // User1 should be able to refer multiple users
-      await movinEarn.connect(user2).registerReferral(user1.address);
-      await movinEarn.connect(user3).registerReferral(user1.address);
-      await movinEarn.connect(user4).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
+      await signatureHelper.registerReferral(user3, user1.address);
+      await signatureHelper.registerReferral(user4, user1.address);
 
       // Get user1's referrals
       const referrals = await movinEarn.getUserReferrals(user1.address);
@@ -1114,14 +1300,15 @@ describe('MOVINEarnV2', function () {
       expect(referrer4).to.equal(user1.address);
 
       // Verify rewards are properly distributed to referrer
-      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user2, true, ethers.parseEther('1000'));
 
       // Get balances before activity
       const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
       const refereeBalanceBefore = await movinToken.balanceOf(user2.address);
 
       // Record activity to trigger automatic rewards (premium user)
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user2,
         user2.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -1152,20 +1339,21 @@ describe('MOVINEarnV2', function () {
 
     it('Should handle referral rewards correctly', async function () {
       // Set up referral relationship
-      await movinEarn.connect(user2).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
 
       // Set user2 as premium to get both steps and METs rewards
       await movinToken
         .connect(user2)
         .approve(await movinEarn.getAddress(), ethers.parseEther('1000'));
-      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('1000'));
+      await signatureHelper.setPremiumStatus(user2, true, ethers.parseEther('1000'));
 
       // Get balances before activity
       const user2BalanceBefore = await movinToken.balanceOf(user2.address);
       const user1BalanceBefore = await movinToken.balanceOf(user1.address);
 
       // Record activity for user2 to generate rewards (premium user)
-      await movinEarn.recordActivity(
+      await signatureHelper.recordActivity(
+        user2,
         user2.address,
         PREMIUM_STEPS_THRESHOLD,
         PREMIUM_METS_THRESHOLD
@@ -1203,7 +1391,7 @@ describe('MOVINEarnV2', function () {
       const refereeBalanceBefore = await movinToken.balanceOf(user2.address);
 
       // Register referral
-      await movinEarn.connect(user2).registerReferral(user1.address);
+      await signatureHelper.registerReferral(user2, user1.address);
 
       // Get balances after registering referral
       const referrerBalanceAfter = await movinToken.balanceOf(user1.address);
@@ -1227,7 +1415,7 @@ describe('MOVINEarnV2', function () {
 
       // Set premium status with monthly payment
       const monthlyAmount = ethers.parseEther('100'); // 100 MVN tokens
-      await movinEarn.connect(user1).setPremiumStatus(true, monthlyAmount);
+      await signatureHelper.setPremiumStatus(user1, true, monthlyAmount);
 
       // Get updated premium status
       const [status, paid, expiration] = await movinEarn.getPremiumStatus(user1.address);
@@ -1245,7 +1433,7 @@ describe('MOVINEarnV2', function () {
     it('Should set and get premium status with yearly payment', async function () {
       // Set premium status with yearly payment
       const yearlyAmount = ethers.parseEther('1000'); // 1000 MVN tokens
-      await movinEarn.connect(user1).setPremiumStatus(true, yearlyAmount);
+      await signatureHelper.setPremiumStatus(user1, true, yearlyAmount);
 
       // Get updated premium status
       const [status, paid, expiration] = await movinEarn.getPremiumStatus(user1.address);
@@ -1264,21 +1452,21 @@ describe('MOVINEarnV2', function () {
       // Try to set premium status with invalid amount
       const invalidAmount = ethers.parseEther('500'); // Neither monthly nor yearly amount
       await expect(
-        movinEarn.connect(user1).setPremiumStatus(true, invalidAmount)
+        signatureHelper.setPremiumStatus(user1, true, invalidAmount)
       ).to.be.revertedWithCustomError(movinEarn, 'InvalidPremiumAmount');
     });
 
     it('Should allow resetting premium status to false', async function () {
       // First set premium status
       const monthlyAmount = ethers.parseEther('100');
-      await movinEarn.connect(user1).setPremiumStatus(true, monthlyAmount);
+      await signatureHelper.setPremiumStatus(user1, true, monthlyAmount);
 
       // Verify it was set
       const [initialStatus] = await movinEarn.getPremiumStatus(user1.address);
       expect(initialStatus).to.equal(true);
 
       // Reset premium status to false
-      await movinEarn.connect(user1).setPremiumStatus(false, 0);
+      await signatureHelper.setPremiumStatus(user1, false, 0n);
 
       // Verify it was reset
       const [status, paid, expiration] = await movinEarn.getPremiumStatus(user1.address);
@@ -1290,7 +1478,7 @@ describe('MOVINEarnV2', function () {
     it('Should return expired status after the premium period ends', async function () {
       // Set premium status with monthly payment
       const monthlyAmount = ethers.parseEther('100');
-      await movinEarn.connect(user1).setPremiumStatus(true, monthlyAmount);
+      await signatureHelper.setPremiumStatus(user1, true, monthlyAmount);
 
       // Verify it was set
       const [initialStatus] = await movinEarn.getPremiumStatus(user1.address);
@@ -1310,13 +1498,13 @@ describe('MOVINEarnV2', function () {
 
     it('Should restrict METs activity rewards for non-premium users', async function () {
       // Ensure user2 is not premium
-      await movinEarn.connect(user2).setPremiumStatus(false, 0);
+      await signatureHelper.setPremiumStatus(user2, false, 0n);
 
       // Get initial balance
       const initialBalance = await movinToken.balanceOf(user2.address);
 
       // Record METs activity for non-premium user
-      await movinEarn.recordActivity(user2.address, 0, PREMIUM_METS_THRESHOLD);
+      await signatureHelper.recordActivity(user2, user2.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity
       const balanceAfter = await movinToken.balanceOf(user2.address);
@@ -1328,14 +1516,14 @@ describe('MOVINEarnV2', function () {
       await movinToken
         .connect(user2)
         .approve(await movinEarn.getAddress(), ethers.parseEther('100'));
-      await movinEarn.connect(user2).setPremiumStatus(true, ethers.parseEther('100'));
+      await signatureHelper.setPremiumStatus(user2, true, ethers.parseEther('100'));
 
       // Save balance after becoming premium
       const balanceAfterPremium = await movinToken.balanceOf(user2.address);
 
       // Record METs activity again (now with premium thresholds)
       await time.increase(60); // Wait 1 minute to avoid rate limiting
-      await movinEarn.recordActivity(user2.address, 0, PREMIUM_METS_THRESHOLD);
+      await signatureHelper.recordActivity(user2, user2.address, 0, PREMIUM_METS_THRESHOLD);
 
       // Get balance after activity as premium user
       const balanceAfterActivity = await movinToken.balanceOf(user2.address);
@@ -1355,14 +1543,14 @@ describe('MOVINEarnV2', function () {
 
       // Try to stake tokens while paused
       await expect(
-        movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 1)
+        signatureHelper.stakeTokens(user1, ethers.parseEther('100'), 1)
       ).to.be.revertedWithCustomError(movinEarn, 'ContractPaused');
 
       // Unpause contract
       await movinEarn.connect(owner).emergencyUnpause();
 
       // Staking should work now
-      await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 1);
+      await signatureHelper.stakeTokens(user1, ethers.parseEther('100'), 1);
     });
   });
 });

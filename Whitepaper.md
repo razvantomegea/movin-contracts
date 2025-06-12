@@ -146,6 +146,50 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 
 ## Technical Details
 
+### Signature Verification System
+
+MOVINEarnV2 implements a robust signature verification system for enhanced security:
+
+#### EIP-712 Domain
+
+- **Name**: "MOVINEarnV2"
+- **Version**: "2"
+- **Chain ID**: Network-specific (e.g., 8453 for Base mainnet)
+- **Verifying Contract**: The deployed MOVINEarnV2 contract address
+
+#### Function Call Structure
+
+All user-facing functions require the following parameters:
+
+- `nonce`: User's current nonce (prevents replay attacks)
+- `deadline`: Unix timestamp when the signature expires
+- `signature`: EIP-712 signature from the contract owner
+
+#### Signature Message Format
+
+```solidity
+struct FunctionCall {
+    address caller;     // User calling the function
+    bytes4 selector;    // Function selector
+    uint256 nonce;      // User's current nonce
+    uint256 deadline;   // Signature expiration time
+}
+```
+
+#### Protected Functions
+
+All user-facing functions require owner signatures:
+
+- `stakeTokens()`
+- `claimStakingRewards()`
+- `claimAllStakingRewards()`
+- `unstake()`
+- `restake()`
+- `recordActivity()`
+- `registerReferral()`
+- `setPremiumStatus()`
+- `deposit()`
+
 ### Constants
 
 - STEPS_THRESHOLD: 10,000 (free users)
@@ -198,15 +242,22 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - AlreadyReferred: When a user attempts to register a referral more than once
 - InvalidReferrer: When attempting to set an invalid referrer
 - InvalidPremiumAmount: When attempting to set premium status with an incorrect amount
+- **SignatureExpired**: When a signature's deadline has passed
+- **InvalidSignature**: When the provided signature is invalid or not from the owner
+- **InvalidNonce**: When the provided nonce doesn't match the user's current nonce
 
 ## Security Features
 
-1. ReentrancyGuard protection on critical functions
-2. Pausable functionality for emergency situations
-3. Ownable2Step for secure ownership management
-4. Input validation for all user inputs
-5. Rate limiting for activity recording
-6. Proper access control for administrative functions
+1. **Owner Signature Verification**: All user-facing functions require valid signatures from the contract owner to prevent unauthorized access
+2. **EIP-712 Typed Data Signatures**: Secure message signing using industry-standard EIP-712 format
+3. **Nonce-based Replay Protection**: Each user has an incrementing nonce to prevent signature replay attacks
+4. **Time-bound Signatures**: All signatures include deadlines to prevent indefinite validity
+5. ReentrancyGuard protection on critical functions
+6. Pausable functionality for emergency situations
+7. Ownable2Step for secure ownership management
+8. Input validation for all user inputs
+9. Rate limiting for activity recording
+10. Proper access control for administrative functions
 
 ## Upgradeability
 
