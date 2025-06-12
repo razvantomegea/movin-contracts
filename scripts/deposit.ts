@@ -18,24 +18,6 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// EIP-712 Domain for MOVINEarnV2
-const EIP712_DOMAIN = {
-  name: 'MOVINEarnV2',
-  version: '2',
-  chainId: 31337, // Hardhat default, update for other networks
-  verifyingContract: MOVIN_EARN_PROXY_ADDRESS,
-};
-
-// EIP-712 Types
-const EIP712_TYPES = {
-  FunctionCall: [
-    { name: 'caller', type: 'address' },
-    { name: 'selector', type: 'bytes4' },
-    { name: 'nonce', type: 'uint256' },
-    { name: 'deadline', type: 'uint256' },
-  ],
-};
-
 // Helper function to get function selector
 function getFunctionSelector(functionSignature: string): string {
   return ethers.keccak256(ethers.toUtf8Bytes(functionSignature)).slice(0, 10);
@@ -47,12 +29,32 @@ async function generateOwnerSignature(
   caller: string,
   functionSignature: string,
   nonce: number,
-  deadline: number
+  deadline: number,
+  chainId: number
 ): Promise<string> {
+  // EIP-712 Domain for MOVINEarnV2 - using the ACTUAL domain from the contract
+  // The contract has empty name and version due to initialization issues
+  const EIP712_DOMAIN = {
+    name: '', // Contract has empty name
+    version: '', // Contract has empty version
+    chainId: chainId,
+    verifyingContract: MOVIN_EARN_PROXY_ADDRESS,
+  };
+
+  // EIP-712 Types
+  const EIP712_TYPES = {
+    FunctionCall: [
+      { name: 'caller', type: 'address' },
+      { name: 'selector', type: 'bytes4' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+  };
+
   const selector = getFunctionSelector(functionSignature);
 
   const message = {
-    caller: caller,
+    caller: caller, // This should be the user calling the function (msg.sender), not the owner
     selector: selector,
     nonce: nonce,
     deadline: deadline,
@@ -78,8 +80,13 @@ async function main() {
   const userWallet = new ethers.Wallet(privateKey, provider);
   const ownerWallet = new ethers.Wallet(ownerPrivateKey, provider);
 
+  // Get chain ID from the network
+  const network = await provider.getNetwork();
+  const chainId = Number(network.chainId);
+
   console.log('Using user wallet address:', userWallet.address);
   console.log('Using owner wallet address:', ownerWallet.address);
+  console.log('Using chain ID:', chainId);
 
   // Get contract instances
   const movinEarnV2 = await ethers.getContractAt(
@@ -127,7 +134,8 @@ async function main() {
   //     userWallet.address,
   //     'deposit(uint256,uint256,uint256,bytes)',
   //     Number(nonce),
-  //     deadline
+  //     deadline,
+  //     chainId
   //   );
 
   //   console.log(`Generated signature: ${depositSignature.slice(0, 10)}...`);
@@ -177,7 +185,8 @@ async function main() {
     userWallet.address,
     'setPremiumStatus(bool,uint256,uint256,uint256,bytes)',
     Number(premiumNonce),
-    premiumDeadline
+    premiumDeadline,
+    chainId
   );
   await movinEarnV2.setPremiumStatus(false, 0, premiumNonce, premiumDeadline, premiumSignature);
   */
@@ -187,6 +196,96 @@ async function main() {
 
   const userActivity = await movinEarnV2.getTodayUserActivity(userWallet.address);
   console.log(`User activity: ${userActivity}`);
+
+  // Test recordActivity with owner signature
+  console.log('\n🔄 Testing recordActivity with 1 step...');
+  try {
+    // Get user's nonce and create deadline
+    const activityNonce = await (movinEarnV2 as any).getNonce(userWallet.address);
+    const activityDeadline = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+
+    console.log(`Activity nonce: ${activityNonce}, Deadline: ${activityDeadline}`);
+    console.log(`Current timestamp: ${Math.floor(Date.now() / 1000)}`);
+    console.log(
+      `Deadline is ${activityDeadline - Math.floor(Date.now() / 1000)} seconds in the future`
+    );
+
+    // Debug: Generate function selector manually
+    const functionSig = 'recordActivity(address,uint256,uint256,uint256,uint256,bytes)';
+    const functionSelector = getFunctionSelector(functionSig);
+    console.log(`Function signature: ${functionSig}`);
+    console.log(`Function selector: ${functionSelector}`);
+
+    // Generate owner signature for recordActivity
+    const activitySignature = await generateOwnerSignature(
+      ownerWallet,
+      userWallet.address,
+      functionSig,
+      Number(activityNonce),
+      activityDeadline,
+      chainId
+    );
+
+    console.log(`Generated activity signature: ${activitySignature.slice(0, 10)}...`);
+    console.log(`Full signature: ${activitySignature}`);
+    console.log(`Signature length: ${activitySignature.length}`);
+
+    // Debug: Print EIP712 domain hash manually
+    console.log('EIP712 Domain used for signing:', {
+      name: '', // Using actual contract domain (empty)
+      version: '', // Using actual contract domain (empty)
+      chainId: chainId,
+      verifyingContract: MOVIN_EARN_PROXY_ADDRESS,
+    });
+
+    // Call recordActivity with signature (1 step, 0 mets)
+    console.log('Calling recordActivity with params:', {
+      user: userWallet.address,
+      newSteps: 1,
+      newMets: 0,
+      nonce: Number(activityNonce),
+      deadline: activityDeadline,
+      signatureLength: activitySignature.length,
+    });
+
+    const recordTx = await (movinEarnV2 as any).recordActivity(
+      userWallet.address,
+      1, // 1 step
+      0, // 0 mets
+      activityNonce,
+      activityDeadline,
+      activitySignature
+    );
+    await recordTx.wait();
+    console.log('✅ recordActivity successful');
+  } catch (error) {
+    console.error('❌ recordActivity failed:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+
+      // Try to get more specific error information
+      if (error.message.includes('execution reverted')) {
+        console.log('\n🔍 This could be due to:');
+        console.log('1. InvalidSignature - Owner signature verification failed');
+        console.log('2. InvalidNonce - Nonce mismatch');
+        console.log('3. SignatureExpired - Deadline passed');
+        console.log('4. InvalidActivityInput - Activity validation failed');
+        console.log('5. ContractPaused - Contract is paused');
+      }
+    }
+
+    // Let's also test if the contract is paused
+    try {
+      const isPaused = await (movinEarnV2 as any).paused();
+      console.log(`Contract paused status: ${isPaused}`);
+
+      const owner = await (movinEarnV2 as any).owner();
+      console.log(`Contract owner: ${owner}`);
+      console.log(`Signer is owner: ${owner.toLowerCase() === ownerWallet.address.toLowerCase()}`);
+    } catch (e) {
+      console.log('Could not check contract status');
+    }
+  }
 }
 
 main().catch(error => {
