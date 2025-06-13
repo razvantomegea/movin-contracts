@@ -2,13 +2,13 @@ import { ethers } from 'hardhat';
 import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from './contract-addresses';
 import * as dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ path: '.env.local' });
 
 async function main() {
-  // Get private key from .env
+  // Get private key from .env.local
   const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) {
-    throw new Error('Private key not found in .env file');
+    throw new Error('Private key not found in .env.local file');
   }
 
   // Create provider and wallet
@@ -77,6 +77,29 @@ async function main() {
 
   const userActivity = await movinEarnV2.getTodayUserActivity(wallet.address);
   console.log(`User activity: ${userActivity}`);
+
+  // Test setTransactionSync
+  console.log('\nTesting setTransactionSync...');
+  const userAddressToSet = wallet.address;
+  const statusToSet = false;
+
+  console.log(`Setting transaction sync for user: ${userAddressToSet} to status: ${statusToSet}`);
+  const setSyncTx = await movinEarnV2
+    .connect(wallet)
+    .setTransactionSync(userAddressToSet, statusToSet);
+  const receipt = await setSyncTx.wait();
+  console.log(`✅ Transaction sync set successfully in tx: ${receipt?.hash}`);
+
+  // Verify the value
+  console.log(`Verifying synced status for user: ${userAddressToSet}`);
+  const syncedStatus = await movinEarnV2.transactionSync(userAddressToSet);
+  console.log(`Retrieved synced status: ${syncedStatus}`);
+
+  if (syncedStatus === statusToSet) {
+    console.log('✅ Verification successful: Synced status matches the set status.');
+  } else {
+    console.error('❌ Verification failed: Synced status does not match.');
+  }
 }
 
 main().catch(error => {

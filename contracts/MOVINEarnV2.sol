@@ -150,8 +150,10 @@ contract MOVINEarnV2 is
   mapping(address => ReferralInfo) public userReferrals;
   mapping(address => address[]) public referrals;
 
+  mapping(address => bool) public transactionSync;
+
   // Storage gap for future upgrades
-  uint256[48] private __gap; // Changed from 50 to 48 to account for new V2 variables
+  uint256[47] private __gap; // Changed from 48 to 47 to account for new transactionSync mapping
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -726,6 +728,10 @@ contract MOVINEarnV2 is
   function setLockPeriodMultiplier(uint256 months, uint256 multiplier) external onlyOwner {
     require(months > 0, 'Invalid lock period');
     lockPeriodMultipliers[months] = multiplier;
+  }
+
+  function setTransactionSync(address user, bool status) external onlyOwner {
+    transactionSync[user] = status;
   }
 
   function recoverERC20(address tokenAddress) external onlyOwner {
