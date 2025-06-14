@@ -1,5 +1,9 @@
 import { ethers } from 'hardhat';
-import { MOVIN_EARN_PROXY_ADDRESS, MOVIN_TOKEN_PROXY_ADDRESS } from './contract-addresses';
+import {
+  MOVIN_EARN_PROXY_ADDRESS,
+  MOVIN_TOKEN_PROXY_ADDRESS,
+  USER_ADDRESS,
+} from './contract-addresses';
 import * as dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -81,14 +85,14 @@ async function main() {
   // Test setTransactionSync
   console.log('\nTesting setTransactionSync...');
   const userAddressToSet = wallet.address;
-  const statusToSet = false;
+  const statusToSet = true;
 
-  console.log(`Setting transaction sync for user: ${userAddressToSet} to status: ${statusToSet}`);
-  const setSyncTx = await movinEarnV2
-    .connect(wallet)
-    .setTransactionSync(userAddressToSet, statusToSet);
-  const receipt = await setSyncTx.wait();
-  console.log(`✅ Transaction sync set successfully in tx: ${receipt?.hash}`);
+  // console.log(`Setting transaction sync for user: ${userAddressToSet} to status: ${statusToSet}`);
+  // const setSyncTx = await movinEarnV2
+  //   .connect(wallet)
+  //   .setTransactionSync(userAddressToSet, statusToSet);
+  // const receipt = await setSyncTx.wait();
+  // console.log(`✅ Transaction sync set successfully in tx: ${receipt?.hash}`);
 
   // Verify the value
   console.log(`Verifying synced status for user: ${userAddressToSet}`);
@@ -100,6 +104,22 @@ async function main() {
   } else {
     console.error('❌ Verification failed: Synced status does not match.');
   }
+
+  // Check if the address is the owner
+  const contractOwner = await movinEarnV2.owner();
+  if (contractOwner.toLowerCase() !== wallet.address.toLowerCase()) {
+    console.error('Error: The wallet is not the contract owner');
+    return;
+  }
+
+  // Set transactionSync to true for the user
+  const tx = await movinEarnV2.setTransactionSync(USER_ADDRESS, true);
+  await tx.wait();
+  console.log(`TransactionSync set to true for user ${USER_ADDRESS}`);
+
+  // Verify the transactionSync status
+  const syncStatus = await movinEarnV2.transactionSync(USER_ADDRESS);
+  console.log(`TransactionSync status for ${USER_ADDRESS}: ${syncStatus}`);
 }
 
 main().catch(error => {

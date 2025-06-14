@@ -3,6 +3,7 @@ import { ethers, upgrades } from 'hardhat';
 import { MOVINEarnV2, MovinToken } from '../typechain-types';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { time } from '@nomicfoundation/hardhat-network-helpers';
+import { USER_ADDRESS } from '../scripts/contract-addresses';
 
 describe('MOVINEarnV2', function () {
   let movinToken: MovinToken;
@@ -618,6 +619,30 @@ describe('MOVINEarnV2', function () {
     beforeEach(async function () {
       // Set user1 as premium
       await movinEarn.connect(user1).setPremiumStatus(true, ethers.parseEther('1000'));
+
+      // Set transactionSync to true for both users
+      await movinEarn.connect(owner).setTransactionSync(user1.address, true);
+      await movinEarn.connect(owner).setTransactionSync(user2.address, true);
+    });
+
+    it('Should reject activity if transactionSync is false', async function () {
+      // Set transactionSync to false for user1
+      await movinEarn.connect(owner).setTransactionSync(user1.address, false);
+
+      // Try to record activity
+      await expect(
+        movinEarn.recordActivity(user1.address, PREMIUM_STEPS_THRESHOLD, 0)
+      ).to.be.revertedWithCustomError(movinEarn, 'UnauthorizedAccess');
+
+      // Set transactionSync back to true
+      await movinEarn.connect(owner).setTransactionSync(user1.address, true);
+
+      // Now activity recording should work
+      await movinEarn.recordActivity(user1.address, PREMIUM_STEPS_THRESHOLD, 0);
+
+      // Verify activity was recorded
+      const activity = await movinEarn.getTodayUserActivity(user1.address);
+      expect(activity.dailySteps).to.equal(PREMIUM_STEPS_THRESHOLD);
     });
 
     it('Should correctly record steps activity and distribute rewards', async function () {
@@ -1029,6 +1054,16 @@ describe('MOVINEarnV2', function () {
   });
 
   describe('Referral system', function () {
+    // Set transactionSync to true for all users before referral tests
+    beforeEach(async function () {
+      await movinEarn.connect(owner).setTransactionSync(user1.address, true);
+      await movinEarn.connect(owner).setTransactionSync(user2.address, true);
+      // Set for user3 and user4 that are used in some referral tests
+      const [, , , user3, user4] = await ethers.getSigners();
+      await movinEarn.connect(owner).setTransactionSync(user3.address, true);
+      await movinEarn.connect(owner).setTransactionSync(user4.address, true);
+    });
+
     it('Should allow users to register referrals', async function () {
       // Get balances before registering referral
       const referrerBalanceBefore = await movinToken.balanceOf(user1.address);
@@ -1216,6 +1251,12 @@ describe('MOVINEarnV2', function () {
   });
 
   describe('Premium status functionality', function () {
+    // Set transactionSync to true for users in premium status tests
+    beforeEach(async function () {
+      await movinEarn.connect(owner).setTransactionSync(user1.address, true);
+      await movinEarn.connect(owner).setTransactionSync(user2.address, true);
+    });
+
     it('Should set and get premium status with monthly payment', async function () {
       // Get initial premium status
       const [initialStatus, initialPaid, initialExpiration] = await movinEarn.getPremiumStatus(
