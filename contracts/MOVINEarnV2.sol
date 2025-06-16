@@ -462,7 +462,7 @@ contract MOVINEarnV2 is
     uint256 newMets
   ) external whenNotPausedWithRevert {
     // Require transactionSync to be true for the user
-    if (!transactionSync[user]) revert UnauthorizedAccess();
+    // if (!transactionSync[user]) revert UnauthorizedAccess();
 
     // Skip validation completely if both inputs are zero
     // This allows referral registration to work properly
