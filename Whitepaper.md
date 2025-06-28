@@ -71,6 +71,7 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - Rate limit: 300 steps per minute
 - Rewards: 1 MVN per threshold reached (0.1% decrease per day)
 - Resets at midnight (based on activity timestamp)
+- Any positive steps are rewarded, up to a daily cap of 30,000 steps. Rewards are proportional to the number of steps recorded, up to the daily cap. Per-minute (300 steps/min) and daily caps remain enforced. Rewards rates decrease by 0.1% daily, compounded.
 
 #### METs (Metabolic Equivalent of Task) Tracking
 
@@ -80,13 +81,14 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - Only available for premium users
 - Rewards: 1 MVN per 5 METs (0.1% decrease per day)
 - Resets at midnight (based on activity timestamp)
+- Premium users can earn rewards for any positive METs, up to a daily cap of 500 METs. Non-premium users cannot earn METs rewards. Rewards are proportional to the number of METs recorded, up to the daily cap. Per-minute (5 METs/min) and daily caps remain enforced. Rewards rates decrease by 0.1% daily, compounded.
 
 ### 4. Subscription Plans
 
 #### Free Plan (Basic)
 
 - 0 MVN / forever
-- Basic step tracking (10,000-30,000 steps daily)
+- Basic step tracking (up to 30,000 steps daily)
 - Earn MVN tokens for activity
 - Staking options up to 12 months
 - Referral program (1 MVN bonus for both parties + 1% rewards)
@@ -97,8 +99,7 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 
 - 100 MVN / month or 1000 MVN / year (save 16%)
 - Everything in Free plan
-- Lower step threshold (5,000 steps daily)
-- MET tracking (5-500 METs daily)
+- MET tracking (up to 500 METs daily for premium users)
 - Ad-free experience
 - Exclusive 24-month staking with 24% APY
 - Access to maps and route tracking (soon)

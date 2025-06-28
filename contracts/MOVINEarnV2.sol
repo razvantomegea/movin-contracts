@@ -124,10 +124,6 @@ contract MOVINEarnV2 is
   mapping(address => uint256) public userMets;
   mapping(address => PremiumUserData) public userPremiumData;
 
-  uint256 public constant STEPS_THRESHOLD = 10_000;
-  uint256 public constant METS_THRESHOLD = 10;
-  uint256 public constant PREMIUM_STEPS_THRESHOLD = 5_000;
-  uint256 public constant PREMIUM_METS_THRESHOLD = 5;
   uint256 public rewardHalvingTimestamp;
   uint256 public baseStepsRate;
   uint256 public baseMetsRate;
@@ -396,37 +392,23 @@ contract MOVINEarnV2 is
     uint256 dailySteps = activity.dailySteps;
     uint256 dailyMets = activity.dailyMets;
 
-    // Check if activity doesn't exist or timestamp doesn't match current day
     if (activityDay != currentDayOfYear) {
       dailySteps = 0;
       dailyMets = 0;
     }
 
-    uint256 stepsReward = 0;
     uint256 todaySteps = dailySteps + newSteps;
-
-    // Use different thresholds for premium users
-    uint256 stepsThreshold = premiumData.status ? PREMIUM_STEPS_THRESHOLD : STEPS_THRESHOLD;
-
-    if (dailySteps >= stepsThreshold && dailySteps < MAX_DAILY_STEPS) {
-      stepsReward = (newSteps * baseStepsRate) / stepsThreshold;
-    } else if (todaySteps >= stepsThreshold && todaySteps <= MAX_DAILY_STEPS) {
-      stepsReward = (todaySteps * baseStepsRate) / stepsThreshold;
-    }
-
-    if (!premiumData.status) {
-      return (stepsReward, 0, todaySteps, 0);
-    }
-
-    uint256 metsReward = 0;
     uint256 todayMets = dailyMets + newMets;
 
-    if (dailyMets >= PREMIUM_METS_THRESHOLD && dailyMets < MAX_DAILY_METS) {
-      metsReward = (newMets * baseMetsRate) / PREMIUM_METS_THRESHOLD;
-    } else if (todayMets >= PREMIUM_METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
-      metsReward = (todayMets * baseMetsRate) / PREMIUM_METS_THRESHOLD;
-    }
+    // Cap at max daily
+    if (todaySteps > MAX_DAILY_STEPS) todaySteps = MAX_DAILY_STEPS;
+    if (todayMets > MAX_DAILY_METS) todayMets = MAX_DAILY_METS;
 
+    uint256 stepsReward = (todaySteps - dailySteps) * baseStepsRate;
+    uint256 metsReward = 0;
+    if (premiumData.status) {
+      metsReward = (todayMets - dailyMets) * baseMetsRate;
+    }
     return (stepsReward, metsReward, todaySteps, todayMets);
   }
 
