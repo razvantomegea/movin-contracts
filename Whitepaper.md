@@ -66,10 +66,9 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 
 #### Steps Tracking
 
-- Daily steps threshold: 10,000 steps (free users), 5,000 steps (premium users)
 - Maximum daily steps: 30,000 steps (no rewards above)
 - Rate limit: 300 steps per minute
-- Rewards: 1 MVN per threshold reached (0.1% decrease per day)
+- Rewards: 1 MVN per 1000 steps (0.1% decrease per day)
 - Resets at midnight (based on activity timestamp)
 - Any positive steps are rewarded, up to a daily cap of 30,000 steps. Rewards are proportional to the number of steps recorded, up to the daily cap. Per-minute (300 steps/min) and daily caps remain enforced. Rewards rates decrease by 0.1% daily, compounded.
 
@@ -149,9 +148,6 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 
 ### Constants
 
-- STEPS_THRESHOLD: 10,000 (free users)
-- PREMIUM_STEPS_THRESHOLD: 5,000 (premium users)
-- PREMIUM_METS_THRESHOLD: 5 (premium users only)
 - MAX_DAILY_STEPS: 30,000
 - MAX_DAILY_METS: 500
 - MAX_STEPS_PER_MINUTE: 300

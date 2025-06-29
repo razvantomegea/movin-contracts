@@ -404,10 +404,11 @@ contract MOVINEarnV2 is
     if (todaySteps > MAX_DAILY_STEPS) todaySteps = MAX_DAILY_STEPS;
     if (todayMets > MAX_DAILY_METS) todayMets = MAX_DAILY_METS;
 
-    uint256 stepsReward = (todaySteps - dailySteps) * baseStepsRate;
+    // Calculate rewards: 1 MVN per 1000 steps
+    uint256 stepsReward = ((todaySteps - dailySteps) * baseStepsRate) / 1000;
     uint256 metsReward = 0;
     if (premiumData.status) {
-      metsReward = (todayMets - dailyMets) * baseMetsRate;
+      metsReward = ((todayMets - dailyMets) * baseMetsRate) / 5;
     }
     return (stepsReward, metsReward, todaySteps, todayMets);
   }
