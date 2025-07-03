@@ -116,14 +116,42 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - Referral relationships cannot be changed once established
 - Users can retrieve a list of all their referrals
 
-### 6. Reward Rate System
+### 6. Meal Rewards System
+
+The meal rewards system allows the contract owner to distribute MVN tokens to users based on their meal scores, promoting healthy eating habits alongside physical activity.
+
+#### Features
+
+- Owner-only function to ensure controlled distribution
+- Score-based rewards from 1 to 100 points
+- Linear reward scaling: 1 point = 0.01 MVN, 100 points = 1 MVN
+- Automatic token minting if needed through the existing distribution system
+- Event emission for transparency and tracking
+
+#### Technical Details
+
+- Function: `claimMealRewards(address user, uint256 score)`
+- Access: Owner only (`onlyOwner` modifier)
+- Score range: 1-100 (reverts with `InvalidMealScore` for invalid values)
+- Reward calculation: `score * 0.01 MVN = score * 10^16 wei`
+- Uses the existing `_distributeTokens` helper function with minting enabled
+- Emits `MealRewardsClaimed(user, score, amount)` event
+
+#### Use Cases
+
+- Incentivizing healthy meal choices
+- Rewarding participation in nutrition challenges
+- Supporting users who achieve dietary goals
+- Complementing the existing activity-based rewards
+
+### 7. Reward Rate System
 
 - Base reward rates decrease by 0.1% daily
 - Decrease applies to both steps and METs reward rates
 - Decrease is compounded daily
 - Rate decrease is tracked using `rewardHalvingTimestamp`
 
-### 7. Migration System
+### 8. Migration System
 
 - Supports upgrading from V1 to V2
 - Handles data migration for:
@@ -135,11 +163,12 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - Fixes corrupted data during migration
 - Initializes missing fields with appropriate values
 
-### 8. Administrative Functions
+### 9. Administrative Functions
 
 - Contract owner can:
   - Pause/unpause the contract
   - Mint tokens
+  - Claim meal rewards for users based on score (1-100)
   - Update lock period multipliers
   - Recover ERC20 tokens (except MVN token)
   - Verify reward rates consistency
@@ -177,6 +206,7 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - ReferralBonusPaid: Emitted when referral bonus is paid
 - AllStakingRewardsClaimed: Emitted when all staking rewards are claimed
 - Minted: Emitted when tokens are minted
+- MealRewardsClaimed: Emitted when meal rewards are claimed based on score
 - TokensLocked (from MovinToken): Emitted when tokens are locked
 - TokensUnlocked (from MovinToken): Emitted when tokens are unlocked
 
@@ -195,6 +225,7 @@ Our app includes sophisticated verification mechanisms to ensure rewards are ear
 - AlreadyReferred: When a user attempts to register a referral more than once
 - InvalidReferrer: When attempting to set an invalid referrer
 - InvalidPremiumAmount: When attempting to set premium status with an incorrect amount
+- InvalidMealScore: When attempting to claim meal rewards with a score outside the 1-100 range
 
 ## Security Features
 
