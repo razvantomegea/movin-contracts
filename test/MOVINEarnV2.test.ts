@@ -1324,4 +1324,97 @@ describe('MOVINEarnV2', function () {
       await movinEarn.connect(user1).stakeTokens(ethers.parseEther('100'), 1);
     });
   });
+
+  describe('Meal Rewards System', function () {
+    it('Should allow owner to claim meal rewards with valid scores', async function () {
+      const initialBalance = await movinToken.balanceOf(user1.address);
+
+      // Test minimum score (1) - should give 0.01 MVN
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 1);
+      let balanceAfter = await movinToken.balanceOf(user1.address);
+      expect(balanceAfter - initialBalance).to.equal(ethers.parseEther('0.01'));
+
+      // Test mid score (50) - should give 0.5 MVN
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 50);
+      balanceAfter = await movinToken.balanceOf(user1.address);
+      expect(balanceAfter - initialBalance).to.equal(ethers.parseEther('0.51'));
+
+      // Test maximum score (100) - should give 1 MVN
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 100);
+      balanceAfter = await movinToken.balanceOf(user1.address);
+      expect(balanceAfter - initialBalance).to.equal(ethers.parseEther('1.51'));
+    });
+
+    it('Should emit MealRewardsClaimed event with correct parameters', async function () {
+      const score = 75;
+      const expectedReward = ethers.parseEther('0.75'); // 75 * 0.01 MVN
+
+      await expect(movinEarn.connect(owner).claimMealRewards(user1.address, score))
+        .to.emit(movinEarn, 'MealRewardsClaimed')
+        .withArgs(user1.address, score, expectedReward);
+    });
+
+    it('Should reject invalid scores', async function () {
+      // Test score below minimum (0)
+      await expect(
+        movinEarn.connect(owner).claimMealRewards(user1.address, 0)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidMealScore');
+
+      // Test score above maximum (101)
+      await expect(
+        movinEarn.connect(owner).claimMealRewards(user1.address, 101)
+      ).to.be.revertedWithCustomError(movinEarn, 'InvalidMealScore');
+    });
+
+    it('Should only allow owner to claim meal rewards', async function () {
+      // Try to call from non-owner account
+      await expect(
+        movinEarn.connect(user1).claimMealRewards(user2.address, 50)
+      ).to.be.revertedWithCustomError(movinEarn, 'OwnableUnauthorizedAccount');
+    });
+
+    it('Should calculate rewards correctly for various scores', async function () {
+      const testCases = [
+        { score: 1, expectedReward: '0.01' },
+        { score: 10, expectedReward: '0.1' },
+        { score: 25, expectedReward: '0.25' },
+        { score: 33, expectedReward: '0.33' },
+        { score: 50, expectedReward: '0.5' },
+        { score: 77, expectedReward: '0.77' },
+        { score: 99, expectedReward: '0.99' },
+        { score: 100, expectedReward: '1.0' },
+      ];
+
+      for (const testCase of testCases) {
+        const initialBalance = await movinToken.balanceOf(user2.address);
+        
+        await movinEarn.connect(owner).claimMealRewards(user2.address, testCase.score);
+        
+        const balanceAfter = await movinToken.balanceOf(user2.address);
+        const actualReward = balanceAfter - initialBalance;
+        const expectedReward = ethers.parseEther(testCase.expectedReward);
+        
+        expect(actualReward).to.equal(expectedReward);
+      }
+    });
+
+    it('Should work with owner from environment variable (PRIVATE_KEY)', async function () {
+      // This test checks that the owner functionality works with environment configuration
+      // The owner is already set up in beforeEach using the first signer
+      
+      // Verify the current owner
+      const currentOwner = await movinEarn.owner();
+      expect(currentOwner).to.equal(owner.address);
+      
+      // Test meal rewards functionality with the configured owner
+      const initialBalance = await movinToken.balanceOf(user1.address);
+      const score = 85;
+      const expectedReward = ethers.parseEther('0.85');
+      
+      await movinEarn.connect(owner).claimMealRewards(user1.address, score);
+      
+      const balanceAfter = await movinToken.balanceOf(user1.address);
+      expect(balanceAfter - initialBalance).to.equal(expectedReward);
+    });
+  });
 });

@@ -89,6 +89,16 @@ The MVN token includes burn functionality:
 - Activity bonuses are added to referrer's daily activity
 - Users can have multiple referrals, but each user can only have one referrer
 
+### Meal Rewards System
+
+- Owner-controlled meal reward distribution based on user scores
+- Score range: 1-100 points
+- Linear reward scaling: 1 point = 0.01 MVN, 100 points = 1 MVN
+- Function: `claimMealRewards(address user, uint256 score)`
+- Promotes healthy eating habits alongside physical activity
+- Automatic token minting through the existing distribution system
+- Emits `MealRewardsClaimed` event for transparency
+
 ## Prerequisites
 
 - Node.js (v16+ recommended)

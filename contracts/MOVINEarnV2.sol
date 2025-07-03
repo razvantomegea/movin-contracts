@@ -24,6 +24,7 @@ error ContractPaused();
 error AlreadyReferred();
 error InvalidReferrer();
 error InvalidPremiumAmount();
+error InvalidMealScore();
 contract MOVINEarnV2 is
   UUPSUpgradeable,
   Ownable2StepUpgradeable,
@@ -106,6 +107,8 @@ contract MOVINEarnV2 is
   event AllStakingRewardsClaimed(address indexed user, uint256 totalReward, uint256 stakeCount);
 
   event Minted(address indexed user, uint256 amount);
+
+  event MealRewardsClaimed(address indexed user, uint256 score, uint256 amount);
 
   event Restaked(
     address indexed user,
@@ -708,6 +711,26 @@ contract MOVINEarnV2 is
   function mintToken(address to, uint256 amount) external onlyOwner {
     movinToken.mint(to, amount);
     emit Minted(to, amount);
+  }
+
+  /**
+   * @dev Claims meal rewards based on user's meal score
+   * @param user The address to send rewards to
+   * @param score The meal score between 1 and 100
+   * Score of 100 gives 1 MVN, score of 1 gives 0.01 MVN
+   * Linear scaling: reward = score * 0.01 MVN
+   */
+  function claimMealRewards(address user, uint256 score) external onlyOwner {
+    if (score < 1 || score > 100) revert InvalidMealScore();
+
+    // Calculate reward: score * 0.01 MVN = score * 10^16 wei
+    // 1 MVN = 10^18 wei, so 0.01 MVN = 10^16 wei
+    uint256 rewardAmount = score * 10 ** 16;
+
+    // Use _distributeTokens helper to mint tokens if needed
+    _distributeTokens(user, rewardAmount, true);
+
+    emit MealRewardsClaimed(user, score, rewardAmount);
   }
 
   // Owner function to update lock period multipliers
