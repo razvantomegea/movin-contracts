@@ -25,6 +25,7 @@ error AlreadyReferred();
 error InvalidReferrer();
 error InvalidPremiumAmount();
 error InvalidMealScore();
+error MealClaimTooSoon(uint256 lastClaim, uint256 nextAllowed);
 contract MOVINEarnV2 is
   UUPSUpgradeable,
   Ownable2StepUpgradeable,
@@ -148,6 +149,7 @@ contract MOVINEarnV2 is
 
   mapping(address => ReferralInfo) public userReferrals;
   mapping(address => address[]) public referrals;
+  mapping(address => uint256) public lastMealClaim;
 
   mapping(address => bool) public transactionSync;
 
@@ -608,6 +610,10 @@ contract MOVINEarnV2 is
     emit ReferralRegistered(msg.sender, referrer);
   }
 
+  function getLastMealClaim(address user) external view returns (uint256) {
+    return lastMealClaim[user];
+  }
+
   function getReferralInfo(
     address user
   ) external view returns (address referrer, uint256 earnedBonus, uint256 referralCount) {
@@ -722,14 +728,17 @@ contract MOVINEarnV2 is
    */
   function claimMealRewards(address user, uint256 score) external onlyOwner {
     if (score < 1 || score > 100) revert InvalidMealScore();
-
+    // Enforce 2-hour (7200 seconds) limit per user
+    uint256 lastClaim = lastMealClaim[user];
+    if (lastClaim != 0 && block.timestamp < lastClaim + 2 hours) {
+      revert MealClaimTooSoon(lastClaim, lastClaim + 2 hours);
+    }
+    lastMealClaim[user] = block.timestamp;
     // Calculate reward: score * 0.01 MVN = score * 10^16 wei
     // 1 MVN = 10^18 wei, so 0.01 MVN = 10^16 wei
     uint256 rewardAmount = score * 10 ** 16;
-
     // Use _distributeTokens helper to mint tokens if needed
     _distributeTokens(user, rewardAmount, true);
-
     emit MealRewardsClaimed(user, score, rewardAmount);
   }
 

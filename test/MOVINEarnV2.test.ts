@@ -1334,11 +1334,15 @@ describe('MOVINEarnV2', function () {
       let balanceAfter = await movinToken.balanceOf(user1.address);
       expect(balanceAfter - initialBalance).to.equal(ethers.parseEther('0.01'));
 
+      // Advance time by 2 hours
+      await time.increase(2 * 60 * 60);
       // Test mid score (50) - should give 0.5 MVN
       await movinEarn.connect(owner).claimMealRewards(user1.address, 50);
       balanceAfter = await movinToken.balanceOf(user1.address);
       expect(balanceAfter - initialBalance).to.equal(ethers.parseEther('0.51'));
 
+      // Advance time by 2 hours
+      await time.increase(2 * 60 * 60);
       // Test maximum score (100) - should give 1 MVN
       await movinEarn.connect(owner).claimMealRewards(user1.address, 100);
       balanceAfter = await movinToken.balanceOf(user1.address);
@@ -1387,34 +1391,61 @@ describe('MOVINEarnV2', function () {
 
       for (const testCase of testCases) {
         const initialBalance = await movinToken.balanceOf(user2.address);
-        
         await movinEarn.connect(owner).claimMealRewards(user2.address, testCase.score);
-        
         const balanceAfter = await movinToken.balanceOf(user2.address);
         const actualReward = balanceAfter - initialBalance;
         const expectedReward = ethers.parseEther(testCase.expectedReward);
-        
         expect(actualReward).to.equal(expectedReward);
+        // Advance time by 2 hours for next claim
+        await time.increase(2 * 60 * 60);
       }
     });
 
     it('Should work with owner from environment variable (PRIVATE_KEY)', async function () {
       // This test checks that the owner functionality works with environment configuration
       // The owner is already set up in beforeEach using the first signer
-      
+
       // Verify the current owner
       const currentOwner = await movinEarn.owner();
       expect(currentOwner).to.equal(owner.address);
-      
+
       // Test meal rewards functionality with the configured owner
       const initialBalance = await movinToken.balanceOf(user1.address);
       const score = 85;
       const expectedReward = ethers.parseEther('0.85');
-      
+
       await movinEarn.connect(owner).claimMealRewards(user1.address, score);
-      
+
       const balanceAfter = await movinToken.balanceOf(user1.address);
       expect(balanceAfter - initialBalance).to.equal(expectedReward);
+    });
+
+    it('Should not allow claiming meal rewards more than once within 2 hours', async function () {
+      // First claim
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 10);
+      // Increase time by just under 2 hours (should still revert)
+      await time.increase(1);
+      await expect(
+        movinEarn.connect(owner).claimMealRewards(user1.address, 20)
+      ).to.be.revertedWithCustomError(movinEarn, 'MealClaimTooSoon');
+      // Increase time to reach exactly 2 hours
+      await time.increase(2 * 60 * 60);
+      // Now it should succeed
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 20);
+    });
+
+    it('Should allow claiming meal rewards again after 2 hours', async function () {
+      // First claim
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 10);
+      // Increase time by just under 2 hours (should still revert)
+      await time.increase(1);
+      await expect(
+        movinEarn.connect(owner).claimMealRewards(user1.address, 20)
+      ).to.be.revertedWithCustomError(movinEarn, 'MealClaimTooSoon');
+      // Increase time to reach exactly 2 hours
+      await time.increase(2 * 60 * 60);
+      // Now it should succeed
+      await movinEarn.connect(owner).claimMealRewards(user1.address, 20);
     });
   });
 });
