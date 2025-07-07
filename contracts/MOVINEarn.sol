@@ -24,6 +24,8 @@ error ContractPaused();
 error AlreadyReferred();
 error InvalidReferrer();
 error InvalidPremiumAmount();
+error InvalidMealScore();
+error MealClaimTooSoon(uint256 lastClaim, uint256 nextAllowed);
 contract MOVINEarn is
   UUPSUpgradeable,
   Ownable2StepUpgradeable,
@@ -107,6 +109,8 @@ contract MOVINEarn is
 
   event Minted(address indexed user, uint256 amount);
 
+  event MealRewardsClaimed(address indexed user, uint256 score, uint256 amount);
+
   event Restaked(
     address indexed user,
     uint256 amount,
@@ -124,10 +128,6 @@ contract MOVINEarn is
   mapping(address => uint256) public userMets;
   mapping(address => PremiumUserData) public userPremiumData;
 
-  uint256 public constant STEPS_THRESHOLD = 10_000;
-  uint256 public constant METS_THRESHOLD = 10;
-  uint256 public constant PREMIUM_STEPS_THRESHOLD = 5_000;
-  uint256 public constant PREMIUM_METS_THRESHOLD = 5;
   uint256 public rewardHalvingTimestamp;
   uint256 public baseStepsRate;
   uint256 public baseMetsRate;
@@ -149,8 +149,9 @@ contract MOVINEarn is
 
   mapping(address => ReferralInfo) public userReferrals;
   mapping(address => address[]) public referrals;
+  mapping(address => uint256) public lastMealClaim;
 
-  mapping(bytes32 => address) public transactionSync;
+  mapping(address => bool) public transactionSync;
 
   // Storage gap for future upgrades
   uint256[47] private __gap; // Changed from 48 to 47 to account for new transactionSync mapping
@@ -179,8 +180,8 @@ contract MOVINEarn is
     lockPeriodMultipliers[24] = 24;
   }
 
-  // Initialize function for upgrading to V2 (not used in actual upgrade since state is preserved)
-  function initializeV2() public reinitializer(2) {
+  // : Initialize function for upgrading to  (not used in actual upgrade since state is preserved)
+  function initialize() public reinitializer(2) {
     // No changes to rewardHalvingTimestamp to preserve the existing halving schedule
     // Note: rewardHalvingTimestamp is intentionally preserved from V1 to maintain reward decrease cadence
   }
@@ -396,37 +397,24 @@ contract MOVINEarn is
     uint256 dailySteps = activity.dailySteps;
     uint256 dailyMets = activity.dailyMets;
 
-    // Check if activity doesn't exist or timestamp doesn't match current day
     if (activityDay != currentDayOfYear) {
       dailySteps = 0;
       dailyMets = 0;
     }
 
-    uint256 stepsReward = 0;
     uint256 todaySteps = dailySteps + newSteps;
-
-    // Use different thresholds for premium users
-    uint256 stepsThreshold = premiumData.status ? PREMIUM_STEPS_THRESHOLD : STEPS_THRESHOLD;
-
-    if (dailySteps >= stepsThreshold && dailySteps < MAX_DAILY_STEPS) {
-      stepsReward = (newSteps * baseStepsRate) / stepsThreshold;
-    } else if (todaySteps >= stepsThreshold && todaySteps <= MAX_DAILY_STEPS) {
-      stepsReward = (todaySteps * baseStepsRate) / stepsThreshold;
-    }
-
-    if (!premiumData.status) {
-      return (stepsReward, 0, todaySteps, 0);
-    }
-
-    uint256 metsReward = 0;
     uint256 todayMets = dailyMets + newMets;
 
-    if (dailyMets >= PREMIUM_METS_THRESHOLD && dailyMets < MAX_DAILY_METS) {
-      metsReward = (newMets * baseMetsRate) / PREMIUM_METS_THRESHOLD;
-    } else if (todayMets >= PREMIUM_METS_THRESHOLD && todayMets <= MAX_DAILY_METS) {
-      metsReward = (todayMets * baseMetsRate) / PREMIUM_METS_THRESHOLD;
-    }
+    // Cap at max daily
+    if (todaySteps > MAX_DAILY_STEPS) todaySteps = MAX_DAILY_STEPS;
+    if (todayMets > MAX_DAILY_METS) todayMets = MAX_DAILY_METS;
 
+    // Calculate rewards: 1 MVN per 1000 steps
+    uint256 stepsReward = ((todaySteps - dailySteps) * baseStepsRate) / 1000;
+    uint256 metsReward = 0;
+    if (premiumData.status) {
+      metsReward = ((todayMets - dailyMets) * baseMetsRate) / 5;
+    }
     return (stepsReward, metsReward, todaySteps, todayMets);
   }
 
@@ -461,6 +449,9 @@ contract MOVINEarn is
     uint256 newSteps,
     uint256 newMets
   ) external whenNotPausedWithRevert {
+    // Require transactionSync to be true for the user
+    // if (!transactionSync[user]) revert UnauthorizedAccess();
+
     // Skip validation completely if both inputs are zero
     // This allows referral registration to work properly
     if (newSteps <= 0 && newMets <= 0) {
@@ -619,6 +610,10 @@ contract MOVINEarn is
     emit ReferralRegistered(msg.sender, referrer);
   }
 
+  function getLastMealClaim(address user) external view returns (uint256) {
+    return lastMealClaim[user];
+  }
+
   function getReferralInfo(
     address user
   ) external view returns (address referrer, uint256 earnedBonus, uint256 referralCount) {
@@ -626,12 +621,12 @@ contract MOVINEarn is
     return (info.referrer, info.earnedBonus, info.referralCount);
   }
 
-  // V2: New function to get all referrals of a user
+  // : New function to get all referrals of a user
   function getUserReferrals(address user) external view returns (address[] memory) {
     return referrals[user];
   }
 
-  // V2: Function to migrate base rates and halving timestamp
+  // : Function to migrate base rates and halving timestamp
   function migrateBaseRates(uint256 newStepsRate, uint256 newMetsRate) external onlyMigrator {
     // Only migrate if rates are zero (indicating they weren't properly migrated)
     if (baseStepsRate == 0 || baseMetsRate == 0) {
@@ -724,14 +719,37 @@ contract MOVINEarn is
     emit Minted(to, amount);
   }
 
+  /**
+   * @dev Claims meal rewards based on user's meal score
+   * @param user The address to send rewards to
+   * @param score The meal score between 1 and 100
+   * Score of 100 gives 1 MVN, score of 1 gives 0.01 MVN
+   * Linear scaling: reward = score * 0.01 MVN
+   */
+  function claimMealRewards(address user, uint256 score) external onlyOwner {
+    if (score < 1 || score > 100) revert InvalidMealScore();
+    // Enforce 2-hour (7200 seconds) limit per user
+    uint256 lastClaim = lastMealClaim[user];
+    if (lastClaim != 0 && block.timestamp < lastClaim + 2 hours) {
+      revert MealClaimTooSoon(lastClaim, lastClaim + 2 hours);
+    }
+    lastMealClaim[user] = block.timestamp;
+    // Calculate reward: score * 0.01 MVN = score * 10^16 wei
+    // 1 MVN = 10^18 wei, so 0.01 MVN = 10^16 wei
+    uint256 rewardAmount = score * 10 ** 16;
+    // Use _distributeTokens helper to mint tokens if needed
+    _distributeTokens(user, rewardAmount, true);
+    emit MealRewardsClaimed(user, score, rewardAmount);
+  }
+
   // Owner function to update lock period multipliers
   function setLockPeriodMultiplier(uint256 months, uint256 multiplier) external onlyOwner {
     require(months > 0, 'Invalid lock period');
     lockPeriodMultipliers[months] = multiplier;
   }
 
-  function setTransactionSync(bytes32 txHash, address user) external onlyOwner {
-    transactionSync[txHash] = user;
+  function setTransactionSync(address user, bool status) external onlyOwner {
+    transactionSync[user] = status;
   }
 
   function recoverERC20(address tokenAddress) external onlyOwner {
@@ -740,7 +758,7 @@ contract MOVINEarn is
     token.transfer(owner(), token.balanceOf(address(this)));
   }
 
-  // V2: Owner function to verify reward rate consistency (can be called post-upgrade if needed)
+  // : Owner function to verify reward rate consistency (can be called post-upgrade if needed)
   function verifyRewardRates() external view onlyOwner returns (uint256, uint256, uint256) {
     // Return current values for verification without changing them
     return (baseStepsRate, baseMetsRate, rewardHalvingTimestamp);
