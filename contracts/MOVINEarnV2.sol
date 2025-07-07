@@ -742,6 +742,15 @@ contract MOVINEarnV2 is
     emit MealRewardsClaimed(user, score, rewardAmount);
   }
 
+  function getMealRewards(address user, uint256 score) external view returns (uint256) {
+    uint256 lastClaim = lastMealClaim[user];
+    if (lastClaim != 0 && block.timestamp < lastClaim + 2 hours) return 0;
+    // Calculate reward: score * 0.01 MVN = score * 10^16 wei
+    // 1 MVN = 10^18 wei, so 0.01 MVN = 10^16 wei
+    uint256 rewardAmount = score * 10 ** 16;
+    return rewardAmount;
+  }
+
   // Owner function to update lock period multipliers
   function setLockPeriodMultiplier(uint256 months, uint256 multiplier) external onlyOwner {
     require(months > 0, 'Invalid lock period');
